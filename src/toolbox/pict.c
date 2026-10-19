@@ -276,8 +276,8 @@ void pict_draw(uint32_t port, uint32_t h, QRect dst)
         }
         case 0x001A: case 0x001B: {
             uint16_t r = g16(&pc), g = g16(&pc), b = g16(&pc);
-            uint32_t a = port + (op == 0x1A ? P_rgbFg : P_rgbBk);
-            wrw(a, r); wrw(a + 2, g); wrw(a + 4, b);
+            if (op == 0x1A) qd_set_fg_rgb(port, r, g, b);
+            else qd_set_bk_rgb(port, r, g, b);
             break;
         }
         case 0x001D: case 0x001F: skip(&pc, 6); break;

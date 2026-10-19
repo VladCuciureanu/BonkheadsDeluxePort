@@ -101,6 +101,9 @@ uint8_t qd_rgb_to_index(uint32_t ctab, uint16_t r, uint16_t g, uint16_t b);
 void qd_index_to_rgb(uint32_t ctab, uint8_t idx, uint16_t *r, uint16_t *g, uint16_t *b);
 uint8_t qd_fg_index(uint32_t port);
 uint8_t qd_bk_index(uint32_t port);
+/* set the RGB colour and, in colour ports, the palette index QuickDraw draws with */
+void qd_set_fg_rgb(uint32_t port, uint16_t r, uint16_t g, uint16_t b);
+void qd_set_bk_rgb(uint32_t port, uint16_t r, uint16_t g, uint16_t b);
 void qd_fill_rect(uint32_t port, QRect r, const uint8_t pat[8], int mode, uint8_t fg, uint8_t bk);
 void qd_init_port(uint32_t port, bool color);
 uint32_t qd_new_rgn(QRect r);

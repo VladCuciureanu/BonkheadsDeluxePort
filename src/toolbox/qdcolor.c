@@ -176,6 +176,8 @@ static uint32_t new_gworld(int16_t depth, QRect b, uint32_t ctab)
     wr_rect(pm + PM_bounds, b);
     wrw(pm + PM_pixelSize, 8);
     wrl(pm + PM_pmTable, copy_ctab(ctab ? ctab : qd_device_ctab()));
+    qd_set_fg_rgb(port, 0, 0, 0);
+    qd_set_bk_rgb(port, 0xFFFF, 0xFFFF, 0xFFFF);
     wr_rect(port + P_portRect, b);
     qd_set_rgn(rdl(port + P_visRgn), b);
     /* white background like a fresh GWorld */

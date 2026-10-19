@@ -141,10 +141,12 @@ static void control_draw(uint32_t ch)
         frame(port, r, fg, 1);
         QRect tr = r; tr.top = (int16_t)(r.top + (r.bottom - r.top - 14) / 2); tr.bottom = r.bottom;
         uint8_t saved[6]; memcpy(saved, HP(port + P_rgbFg), 6);
-        if (pressed) { wrw(port + P_rgbFg, 0xFFFF); wrw(port + P_rgbFg + 2, 0xFFFF); wrw(port + P_rgbFg + 4, 0xFFFF); }
-        else if (dim) { wrw(port + P_rgbFg, 0x8888); wrw(port + P_rgbFg + 2, 0x8888); wrw(port + P_rgbFg + 4, 0x8888); }
+        uint32_t saved_idx = rdl(port + P_fgColor);
+        if (pressed) qd_set_fg_rgb(port, 0xFFFF, 0xFFFF, 0xFFFF);
+        else if (dim) qd_set_fg_rgb(port, 0x8888, 0x8888, 0x8888);
         draw_text_in(port, tr, title, 1, 0, 12, 0);
         memcpy(HP(port + P_rgbFg), saved, 6);
+        wrl(port + P_fgColor, saved_idx);
     } else if (kind == 1 || kind == 2) {
         int cy = (r.top + r.bottom) / 2;
         QRect b = { (int16_t)(cy - 6), r.left, (int16_t)(cy + 6), (int16_t)(r.left + 12) };

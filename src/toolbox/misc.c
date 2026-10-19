@@ -234,7 +234,7 @@ static void ui_text(int x, int y, const char *s, uint8_t fg)
 {
     if (!ui_port) { ui_port = mm_new_ptr(CGRAFPORT_SIZE, true); qd_init_port(ui_port, true); }
     uint16_t r, g, b; qd_index_to_rgb(qd_device_ctab(), fg, &r, &g, &b);
-    wrw(ui_port + P_rgbFg, r); wrw(ui_port + P_rgbFg + 2, g); wrw(ui_port + P_rgbFg + 4, b);
+    qd_set_fg_rgb(ui_port, r, g, b);
     wrw(ui_port + P_txFont, 3); wrw(ui_port + P_txSize, 12);
     wrw(ui_port + P_pnLoc, (uint16_t)y); wrw(ui_port + P_pnLoc + 2, (uint16_t)x);
     text_draw(ui_port, (const uint8_t *)s, (int)strlen(s));
@@ -546,6 +546,7 @@ static void list_draw(ListInfo *l)
     qd_fill_rect(port, l->view, solid, 8, white, white);
     uint32_t saved = qd_the_port(); qd_set_port(port);
     uint8_t fg[6]; memcpy(fg, HP(port + P_rgbFg), 6);
+    uint32_t fg_idx = rdl(port + P_fgColor);
     uint16_t of = (uint16_t)rdw(port + P_txFont), os = (uint16_t)rdw(port + P_txSize);
     wrw(port + P_txFont, 3); wrw(port + P_txSize, 12);
     for (int i = 0; i < l->rows; i++) {
@@ -554,11 +555,12 @@ static void list_draw(ListInfo *l)
         bool hl = i == l->sel;
         if (hl) qd_fill_rect(port, cr, solid, 8, black, black);
         uint16_t c = hl ? 0xFFFF : 0;
-        wrw(port + P_rgbFg, c); wrw(port + P_rgbFg + 2, c); wrw(port + P_rgbFg + 4, c);
+        qd_set_fg_rgb(port, c, c, c);
         wrw(port + P_pnLoc, (uint16_t)(cr.top + l->cellh - 4)); wrw(port + P_pnLoc + 2, (uint16_t)(cr.left + 4));
         text_draw(port, (const uint8_t *)l->cells[i], (int)strlen(l->cells[i]));
     }
     memcpy(HP(port + P_rgbFg), fg, 6);
+    wrl(port + P_fgColor, fg_idx);
     wrw(port + P_txFont, of); wrw(port + P_txSize, os);
     qd_set_port(saved);
 }

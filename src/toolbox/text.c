@@ -454,6 +454,7 @@ static void draw_glyphs(uint32_t port, int x, int y, const uint8_t *s, int len)
         for (int i = 0; i < 256; i++) qd_index_to_rgb(pd.ctab, (uint8_t)i, &pal_rgb[i][0], &pal_rgb[i][1], &pal_rgb[i][2]);
     }
     bool aa = (mode == 0 || mode == 1 || mode == 8 || mode == 9 || mode == 36) && pd.ctab && rdl(pd.ctab);
+    if (aa) { fr = pal_rgb[fg][0]; fgc = pal_rgb[fg][1]; fb = pal_rgb[fg][2]; }
     int startx = x;
     for (int i = 0; i < len; i++) {
         Glyph *g = glyph(f, size, s[i]);

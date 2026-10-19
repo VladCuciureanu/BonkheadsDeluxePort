@@ -241,8 +241,31 @@ static uint8_t port_index_for(uint32_t port, uint32_t rgbaddr)
     return qd_rgb_to_index(ctab, (uint16_t)rdw(rgbaddr), (uint16_t)rdw(rgbaddr + 2), (uint16_t)rdw(rgbaddr + 4));
 }
 
-uint8_t qd_fg_index(uint32_t port) { return port_index_for(port, port + P_rgbFg); }
-uint8_t qd_bk_index(uint32_t port) { return port_index_for(port, port + P_rgbBk); }
+/* Colour QuickDraw draws with the palette indices in fgColor/bkColor, which
+ * ForeColor/RGBForeColor keep in sync with the RGB fields. Games may also
+ * write an index there directly (Bonkheads does for its high-score list). */
+uint8_t qd_fg_index(uint32_t port)
+{
+    if (is_color_port(port)) return (uint8_t)rdl(port + P_fgColor);
+    return port_index_for(port, port + P_rgbFg);
+}
+uint8_t qd_bk_index(uint32_t port)
+{
+    if (is_color_port(port)) return (uint8_t)rdl(port + P_bkColor);
+    return port_index_for(port, port + P_rgbBk);
+}
+
+void qd_set_fg_rgb(uint32_t port, uint16_t r, uint16_t g, uint16_t b)
+{
+    wrw(port + P_rgbFg, r); wrw(port + P_rgbFg + 2, g); wrw(port + P_rgbFg + 4, b);
+    if (is_color_port(port)) wrl(port + P_fgColor, port_index_for(port, port + P_rgbFg));
+}
+
+void qd_set_bk_rgb(uint32_t port, uint16_t r, uint16_t g, uint16_t b)
+{
+    wrw(port + P_rgbBk, r); wrw(port + P_rgbBk + 2, g); wrw(port + P_rgbBk + 4, b);
+    if (is_color_port(port)) wrl(port + P_bkColor, port_index_for(port, port + P_rgbBk));
+}
 
 void qd_init_port(uint32_t port, bool color)
 {
@@ -264,14 +287,14 @@ void qd_init_port(uint32_t port, bool color)
     wrl(port + P_visRgn, qd_new_rgn(scr));
     QRect wide = { -32767, -32767, 32767, 32767 };
     wrl(port + P_clipRgn, qd_new_rgn(wide));
-    wrw(port + P_rgbFg, 0); wrw(port + P_rgbFg + 2, 0); wrw(port + P_rgbFg + 4, 0);
-    wrw(port + P_rgbBk, 0xFFFF); wrw(port + P_rgbBk + 2, 0xFFFF); wrw(port + P_rgbBk + 4, 0xFFFF);
+    wrl(port + P_fgColor, 33); wrl(port + P_bkColor, 30);
+    qd_set_fg_rgb(port, 0, 0, 0);
+    qd_set_bk_rgb(port, 0xFFFF, 0xFFFF, 0xFFFF);
     wrl(port + P_pnLoc, 0);
     wrw(port + P_pnSize, 1); wrw(port + P_pnSize + 2, 1);
     wrw(port + P_pnMode, 8);
     wrw(port + P_pnVis, 0);
     wrw(port + P_txFont, 0); wrw(port + P_txFace, 0); wrw(port + P_txMode, 1); wrw(port + P_txSize, 0);
-    wrl(port + P_fgColor, 33); wrl(port + P_bkColor, 30);
     PortPats *pp = port_pats(port);
     memset(pp->pen, 0xFF, 8); memset(pp->bk, 0, 8); memset(pp->fill, 0xFF, 8);
 }
@@ -711,17 +734,19 @@ static void T_ForeColor(uint16_t op)
     (void)op;
     uint32_t c = ARG32(); uint32_t port = qd_the_port();
     uint16_t r, g, b; classic_rgb(c, &r, &g, &b);
-    wrl(port + P_fgColor, c); set_rgb(port + P_rgbFg, r, g, b);
+    if (is_color_port(port)) qd_set_fg_rgb(port, r, g, b);
+    else { wrl(port + P_fgColor, c); set_rgb(port + P_rgbFg, r, g, b); }
 }
 static void T_BackColor(uint16_t op)
 {
     (void)op;
     uint32_t c = ARG32(); uint32_t port = qd_the_port();
     uint16_t r, g, b; classic_rgb(c, &r, &g, &b);
-    wrl(port + P_bkColor, c); set_rgb(port + P_rgbBk, r, g, b);
+    if (is_color_port(port)) qd_set_bk_rgb(port, r, g, b);
+    else { wrl(port + P_bkColor, c); set_rgb(port + P_rgbBk, r, g, b); }
 }
-static void T_RGBForeColor(uint16_t op) { (void)op; uint32_t p = ARG32(); memcpy(HP(qd_the_port() + P_rgbFg), HP(p), 6); }
-static void T_RGBBackColor(uint16_t op) { (void)op; uint32_t p = ARG32(); memcpy(HP(qd_the_port() + P_rgbBk), HP(p), 6); }
+static void T_RGBForeColor(uint16_t op) { (void)op; uint32_t p = ARG32(); qd_set_fg_rgb(qd_the_port(), (uint16_t)rdw(p), (uint16_t)rdw(p + 2), (uint16_t)rdw(p + 4)); }
+static void T_RGBBackColor(uint16_t op) { (void)op; uint32_t p = ARG32(); qd_set_bk_rgb(qd_the_port(), (uint16_t)rdw(p), (uint16_t)rdw(p + 2), (uint16_t)rdw(p + 4)); }
 static void T_GetForeColor(uint16_t op) { (void)op; uint32_t p = ARG32(); memcpy(HP(p), HP(qd_the_port() + P_rgbFg), 6); }
 static void T_GetBackColor(uint16_t op) { (void)op; uint32_t p = ARG32(); memcpy(HP(p), HP(qd_the_port() + P_rgbBk), 6); }
 
