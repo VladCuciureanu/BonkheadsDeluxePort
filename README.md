@@ -268,11 +268,16 @@ The engine also builds on macOS and Linux in CI.
 - The level editor ("The Bonkreator") isn't ported.
 - A few shapes are approximated: round rectangles and ovals draw square.
 
-## Legal
+## Credits and license
 
-Bonkheads Deluxe is © 1997 1 A.M. Productions. This is an independent,
-unofficial port that contains none of the original game's code or assets,
-so you need your own copy of the game.
+**Bonkheads Deluxe** was created by **1 A.M. Productions** (© 1997) and
+published by **Aspyr Media**. The game, its characters, art, sound, music
+and levels are theirs, and all credit for it belongs to them.
+
+This is an independent, unofficial port. It contains none of the original
+game's code or assets, so you need your own copy of the game. The port's own
+code is dedicated to the public domain under the [Unlicense](LICENSE). Its
+author claims no rights to it.
 
 The build downloads these libraries, which keep their own licenses:
 
