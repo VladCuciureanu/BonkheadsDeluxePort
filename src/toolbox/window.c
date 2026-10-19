@@ -86,6 +86,7 @@ void win_restore_under(uint32_t w)
     if (!wi || !wi->under) return;
     QRect r = wi->ur;
     int ww = r.right - r.left, hh = r.bottom - r.top;
+    hitext_damage_screen(r);
     for (int y = 0; y < hh; y++) memcpy(HP(g_screen_fb + (uint32_t)(r.top + y) * SCREEN_W + r.left), wi->under + (size_t)y * ww, ww);
     free(wi->under); wi->under = NULL;
 }
@@ -94,6 +95,7 @@ static void fill_screen(QRect r, uint8_t idx)
 {
     QRect scr = { 0, 0, SCREEN_H, SCREEN_W };
     r = rect_sect(r, scr);
+    hitext_damage_screen(r);
     for (int y = r.top; y < r.bottom; y++) memset(HP(g_screen_fb + (uint32_t)y * SCREEN_W + r.left), idx, (size_t)(r.right - r.left));
 }
 

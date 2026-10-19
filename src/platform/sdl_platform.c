@@ -10,6 +10,12 @@ static SDL_Texture *tex;
 static InputState in;
 static bool quit_req;
 static uint64_t t0;
+static SDL_FRect view;          /* where the 640x480 image lands, in output pixels */
+static float view_scale = 1;
+static char capture_path[512];  /* save the next presented frame here */
+
+#define MAXTEXT 1024
+static SDL_Texture *texts[MAXTEXT];
 
 #define EVQ 64
 static PlatEvent evq[EVQ];
@@ -76,7 +82,6 @@ bool plat_init(int scale, bool fullscreen)
     ren = SDL_CreateRenderer(win, NULL);
     if (!ren) { log_warn("SDL_CreateRenderer: %s", SDL_GetError()); return false; }
     SDL_SetRenderVSync(ren, 0);
-    SDL_SetRenderLogicalPresentation(ren, SCREEN_W, SCREEN_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
     tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
     SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
     t0 = SDL_GetTicksNS();
@@ -130,11 +135,27 @@ static void set_key(int16_t mac, bool down)
     else in.keymap[mac >> 3] &= (uint8_t)~(1u << (mac & 7));
 }
 
+static void update_view(void)
+{
+    int ow = SCREEN_W, oh = SCREEN_H;
+    SDL_GetCurrentRenderOutputSize(ren, &ow, &oh);
+    float sx = (float)ow / SCREEN_W, sy = (float)oh / SCREEN_H;
+    view_scale = sx < sy ? sx : sy;
+    view.w = SCREEN_W * view_scale; view.h = SCREEN_H * view_scale;
+    view.x = (ow - view.w) / 2; view.y = (oh - view.h) / 2;
+}
+
+float plat_output_scale(void) { update_view(); return view_scale; }
+
 static void map_mouse(float wx, float wy)
 {
-    float lx, ly;
-    SDL_RenderCoordinatesFromWindow(ren, wx, wy, &lx, &ly);
-    in.mouse_x = (int)lx; in.mouse_y = (int)ly;
+    int ww = 1, wh = 1, pw = 1, ph = 1;
+    SDL_GetWindowSize(win, &ww, &wh);
+    SDL_GetWindowSizeInPixels(win, &pw, &ph);
+    float px = wx * pw / (float)ww, py = wy * ph / (float)wh;
+    update_view();
+    in.mouse_x = (int)((px - view.x) / view_scale);
+    in.mouse_y = (int)((py - view.y) / view_scale);
 }
 
 /* scripted key presses for automated testing (--press) */
@@ -257,7 +278,31 @@ void plat_pump(void)
     in.modifiers = mac_modifiers();
 }
 
-void plat_present(const uint8_t *fb, int pitch, const uint8_t pal[256][3])
+int plat_text_create(const uint8_t *alpha, int w, int h)
+{
+    int slot = -1;
+    for (int i = 1; i < MAXTEXT; i++) if (!texts[i]) { slot = i; break; }
+    if (slot < 0 || w <= 0 || h <= 0) return 0;
+    SDL_Texture *t = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, w, h);
+    if (!t) return 0;
+    uint8_t *px = (uint8_t *)SDL_malloc((size_t)w * h * 4);
+    for (int i = 0; i < w * h; i++) { px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = 255; px[i * 4 + 3] = alpha[i]; }
+    SDL_UpdateTexture(t, NULL, px, w * 4);
+    SDL_free(px);
+    SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(t, SDL_SCALEMODE_LINEAR);
+    texts[slot] = t;
+    return slot;
+}
+
+void plat_text_destroy(int handle)
+{
+    if (handle > 0 && handle < MAXTEXT && texts[handle]) { SDL_DestroyTexture(texts[handle]); texts[handle] = NULL; }
+}
+
+void plat_request_capture(const char *path) { SDL_strlcpy(capture_path, path, sizeof capture_path); }
+
+void plat_present(const uint8_t *fb, int pitch, const uint8_t pal[256][3], const PlatTextDraw *draws, int ndraws)
 {
     void *pixels; int tpitch;
     if (!SDL_LockTexture(tex, NULL, &pixels, &tpitch)) return;
@@ -269,9 +314,23 @@ void plat_present(const uint8_t *fb, int pitch, const uint8_t pal[256][3])
         for (int x = 0; x < SCREEN_W; x++) d[x] = lut[s[x]];
     }
     SDL_UnlockTexture(tex);
+    update_view();
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
     SDL_RenderClear(ren);
-    SDL_RenderTexture(ren, tex, NULL, NULL);
+    SDL_RenderTexture(ren, tex, NULL, &view);
+    for (int i = 0; i < ndraws; i++) {
+        const PlatTextDraw *d = &draws[i];
+        if (d->handle <= 0 || d->handle >= MAXTEXT || !texts[d->handle]) continue;
+        SDL_SetTextureColorMod(texts[d->handle], d->r, d->g, d->b);
+        SDL_FRect src = { d->sx, d->sy, d->sw, d->sh };
+        SDL_FRect dst = { view.x + d->x * view_scale, view.y + d->y * view_scale, d->sw, d->sh };
+        SDL_RenderTexture(ren, texts[d->handle], &src, &dst);
+    }
+    if (capture_path[0]) {
+        SDL_Surface *shot = SDL_RenderReadPixels(ren, NULL);
+        if (shot) { SDL_SaveBMP(shot, capture_path); SDL_DestroySurface(shot); }
+        capture_path[0] = 0;
+    }
     SDL_RenderPresent(ren);
 }
 

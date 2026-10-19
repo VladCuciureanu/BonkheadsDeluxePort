@@ -62,6 +62,7 @@ int main(int argc, char **argv)
             else fprintf(stderr, "cannot resolve %s\n", h);
         }
         else if (!strcmp(a, "--trace")) g_log_trace = 1;
+        else if (!strcmp(a, "--pixel-text")) { extern bool g_text_hires; g_text_hires = false; }
         else if (!strcmp(a, "--netlog")) { extern int g_netlog; g_netlog = 1; }
         else if (!strcmp(a, "--shot") && i + 2 < argc) {
             extern double g_shot_after; extern char g_shot_path[512];

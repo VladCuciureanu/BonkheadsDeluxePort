@@ -78,6 +78,11 @@ static void blit_indices(Pic *pc, const uint8_t *img, QRect bounds, QRect sr, QR
     QRect clip = rect_sect(qd_port_clip(pc->port), d.bounds);
     QRect dc = rect_sect(dr, clip);
     if (rect_empty(dc)) return;
+    if (d.base == g_screen_fb) {
+        QRect sdc = { (int16_t)(dc.top - d.bounds.top), (int16_t)(dc.left - d.bounds.left),
+                      (int16_t)(dc.bottom - d.bounds.top), (int16_t)(dc.right - d.bounds.left) };
+        hitext_damage_screen(sdc);
+    }
     int bw = bounds.right - bounds.left;
     int sw = sr.right - sr.left, sh = sr.bottom - sr.top, dw = dr.right - dr.left, dh = dr.bottom - dr.top;
     if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) return;

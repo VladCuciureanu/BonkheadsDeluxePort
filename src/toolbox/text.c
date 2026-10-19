@@ -24,19 +24,28 @@ static Face faces[NFACES];
 static int16_t game_font_id = -1;
 static char game_font_name[64];
 
-static const char *host_candidates[NFACES][12] = {
-    { "/System/Library/Fonts/Geneva.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf",
-      "C:/Windows/Fonts/tahoma.ttf", "C:/Windows/Fonts/verdana.ttf", "C:/Windows/Fonts/arial.ttf",
+/* OS user-interface fonts first, then common fallbacks */
+static const char *host_candidates[NFACES][20] = {
+    { "C:/Windows/Fonts/segoeui.ttf", "/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc",
+      "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+      "/usr/share/fonts/google-noto/NotoSans-Regular.ttf", "/usr/share/fonts/TTF/NotoSans-Regular.ttf",
+      "/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf",
+      "C:/Windows/Fonts/tahoma.ttf", "C:/Windows/Fonts/arial.ttf",
       "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
       "/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", NULL },
-    { "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/Library/Fonts/Arial Bold.ttf",
-      "C:/Windows/Fonts/tahomabd.ttf", "C:/Windows/Fonts/verdanab.ttf", "C:/Windows/Fonts/arialbd.ttf",
+    { "C:/Windows/Fonts/segoeuib.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/Library/Fonts/Arial Bold.ttf",
+      "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", "/usr/share/fonts/noto/NotoSans-Bold.ttf",
+      "/usr/share/fonts/google-noto/NotoSans-Bold.ttf", "/usr/share/fonts/TTF/NotoSans-Bold.ttf",
+      "C:/Windows/Fonts/tahomabd.ttf", "C:/Windows/Fonts/arialbd.ttf",
       "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
-      "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", NULL },
-    { "/System/Library/Fonts/Monaco.ttf", "C:/Windows/Fonts/consola.ttf", "C:/Windows/Fonts/cour.ttf",
-      "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/TTF/DejaVuSansMono.ttf", NULL },
-    { "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "C:/Windows/Fonts/times.ttf",
-      "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", "/usr/share/fonts/TTF/DejaVuSerif.ttf", NULL },
+      "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+      "/System/Library/Fonts/SFNS.ttf", NULL },
+    { "C:/Windows/Fonts/consola.ttf", "/System/Library/Fonts/SFNSMono.ttf", "/System/Library/Fonts/Monaco.ttf",
+      "/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+      "/usr/share/fonts/TTF/DejaVuSansMono.ttf", "C:/Windows/Fonts/cour.ttf", NULL },
+    { "C:/Windows/Fonts/georgia.ttf", "/System/Library/Fonts/Supplemental/Georgia.ttf",
+      "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/noto/NotoSerif-Regular.ttf",
+      "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", "/usr/share/fonts/TTF/DejaVuSerif.ttf", "C:/Windows/Fonts/times.ttf", NULL },
     { NULL },
 };
 
@@ -189,6 +198,219 @@ void text_font_info(uint32_t port, int *ascent, int *descent, int *widmax, int *
     *widmax = eff_size(port);
 }
 
+uint8_t qd_rgb15_to_index(uint32_t ctab, int r5, int g5, int b5);
+bool g_text_hires = true;
+
+/* ------------------------------------------------------------ hi-res screen text
+ * Text drawn onto the screen is not rasterised into the 640x480 framebuffer.
+ * It is kept as a list of strings laid out in 640x480 coordinates and drawn
+ * by the platform at the window's real resolution. An entry disappears when
+ * anything paints over its area (QuickDraw hooks) or when the pixels under
+ * it change (checksum), e.g. the game's own blitters overwrite it. */
+typedef struct {
+    bool used, overlay;
+    Face *face; int size; bool synth_bold, underline;
+    uint8_t color_idx;           /* screen text: palette index, so it fades with the CLUT */
+    uint8_t rgb[3];              /* overlay text: fixed colour */
+    int n; uint8_t ch[160]; int16_t gx[160];
+    int base_y;
+    QRect gbox;                  /* unclipped glyph extents (screen coords) */
+    QRect box;                   /* clipped extents: what the entry covers */
+    uint32_t hash;
+    int handle; float scale; int bw, bh;
+} HiText;
+#define MAXHT 600
+static HiText ht[MAXHT];
+
+static uint32_t fb_hash(QRect r)
+{
+    uint32_t h = 2166136261u;
+    for (int y = r.top; y < r.bottom; y++) {
+        const uint8_t *p = HP(g_screen_fb + (uint32_t)y * SCREEN_W + r.left);
+        for (int x = 0; x < r.right - r.left; x++) h = (h ^ p[x]) * 16777619u;
+    }
+    return h;
+}
+
+static void ht_free(HiText *e)
+{
+    if (e->handle) plat_text_destroy(e->handle);
+    memset(e, 0, sizeof *e);
+}
+
+void hitext_damage_screen(QRect r)
+{
+    if (rect_empty(r)) return;
+    for (int i = 0; i < MAXHT; i++) {
+        HiText *e = &ht[i];
+        if (e->used && !e->overlay && !rect_empty(rect_sect(e->box, r))) ht_free(e);
+    }
+}
+
+static HiText *ht_alloc(void)
+{
+    for (int i = 0; i < MAXHT; i++) if (!ht[i].used) return &ht[i];
+    /* full: recycle the first screen entry */
+    for (int i = 0; i < MAXHT; i++) if (!ht[i].overlay) { ht_free(&ht[i]); return &ht[i]; }
+    return NULL;
+}
+
+static bool ht_layout(HiText *e, Face *f, int size, bool bold, bool underline, const uint8_t *s, int len, int x, int y,
+                      int spextra)
+{
+    if (len > 160) len = 160;
+    e->face = f; e->size = size; e->synth_bold = bold; e->underline = underline;
+    e->n = len; e->base_y = y;
+    QRect g = { 32767, 32767, -32767, -32767 };
+    for (int i = 0; i < len; i++) {
+        Glyph *gl = glyph(f, size, s[i]);
+        e->ch[i] = s[i]; e->gx[i] = (int16_t)x;
+        if (gl->w > 0 && gl->h > 0) {
+            QRect r = { (int16_t)(y + gl->yoff), (int16_t)(x + gl->xoff), (int16_t)(y + gl->yoff + gl->h),
+                        (int16_t)(x + gl->xoff + gl->w + (bold ? 1 : 0)) };
+            g = rect_union(g.right < g.left ? r : g, r);
+        }
+        x += gl->adv + (bold ? 1 : 0);
+        if (s[i] == ' ') x += spextra;
+    }
+    if (underline) {
+        QRect u = { (int16_t)(y + 1), e->gx[0], (int16_t)(y + 2), (int16_t)x };
+        g = rect_union(g.right < g.left ? u : g, u);
+    }
+    if (g.right <= g.left) return false;
+    e->gbox = g;
+    return true;
+}
+
+static void hitext_add(Face *f, int size, bool bold, bool underline, uint8_t color, const uint8_t *s, int len,
+                       int x, int y, int spextra, QRect clip)
+{
+    HiText tmp; memset(&tmp, 0, sizeof tmp);
+    if (!ht_layout(&tmp, f, size, bold, underline, s, len, x, y, spextra)) return;
+    QRect scr = { 0, 0, SCREEN_H, SCREEN_W };
+    tmp.box = rect_sect(rect_sect(tmp.gbox, clip), scr);
+    if (rect_empty(tmp.box)) return;
+    /* the same string redrawn at the same place replaces the old entry */
+    for (int i = 0; i < MAXHT; i++) {
+        HiText *e = &ht[i];
+        if (e->used && !e->overlay && !memcmp(&e->box, &tmp.box, sizeof tmp.box)) ht_free(e);
+    }
+    HiText *e = ht_alloc();
+    if (!e) return;
+    *e = tmp;
+    e->used = true;
+    e->color_idx = color;
+    e->hash = fb_hash(e->box);
+}
+
+/* overlay (port UI) text, independent of the game's pixels */
+void text_overlay_set(int slot, const char *s, int x, int baseline, bool bold, uint8_t r, uint8_t g, uint8_t b)
+{
+    for (int i = 0; i < MAXHT; i++) if (ht[i].used && ht[i].overlay && ht[i].color_idx == slot) ht_free(&ht[i]);
+    if (!s || !*s) return;
+    Face *f = face_get(bold ? FONT_SANS_BOLD : FONT_SANS);
+    if (!f) return;
+    HiText *e = ht_alloc();
+    if (!e) return;
+    memset(e, 0, sizeof *e);
+    if (!ht_layout(e, f, 12, false, false, (const uint8_t *)s, (int)strlen(s), x, baseline, 0)) return;
+    e->used = true; e->overlay = true;
+    e->box = e->gbox;
+    e->color_idx = (uint8_t)slot;
+    e->rgb[0] = r; e->rgb[1] = g; e->rgb[2] = b;
+}
+
+int text_overlay_width(const char *s, bool bold)
+{
+    Face *f = face_get(bold ? FONT_SANS_BOLD : FONT_SANS);
+    int w = 0;
+    if (!f) return (int)strlen(s) * 6;
+    for (const char *p = s; *p; p++) w += glyph(f, 12, (uint8_t)*p)->adv;
+    return w;
+}
+
+void text_overlay_clear(void)
+{
+    for (int i = 0; i < MAXHT; i++) if (ht[i].used && ht[i].overlay) ht_free(&ht[i]);
+}
+
+static void ht_rasterize(HiText *e, float S)
+{
+    if (e->handle) { plat_text_destroy(e->handle); e->handle = 0; }
+    QRect g = e->gbox;
+    int ox = g.left - 1, oy = g.top - 1;
+    int bw = (int)((g.right - g.left + 3) * S + 1), bh = (int)((g.bottom - g.top + 3) * S + 1);
+    if (bw <= 0 || bh <= 0 || bw > 4096 || bh > 1024) return;
+    uint8_t *a = (uint8_t *)calloc((size_t)bw * bh, 1);
+    float sc = stbtt_ScaleForMappingEmToPixels(&e->face->info, e->size * S);
+    float base = (e->base_y - oy) * S;
+    int passes = e->synth_bold ? 2 : 1;
+    for (int i = 0; i < e->n; i++) {
+        int gi = stbtt_FindGlyphIndex(&e->face->info, uni(e->ch[i]));
+        for (int pass = 0; pass < passes; pass++) {
+            float px = (e->gx[i] - ox + pass) * S;
+            float shift = px - (float)(int)px;
+            int x0, y0, x1, y1;
+            stbtt_GetGlyphBitmapBoxSubpixel(&e->face->info, gi, sc, sc, shift, 0, &x0, &y0, &x1, &y1);
+            int w = x1 - x0, h = y1 - y0;
+            if (w <= 0 || h <= 0) continue;
+            uint8_t *tmp = (uint8_t *)malloc((size_t)w * h);
+            stbtt_MakeGlyphBitmapSubpixel(&e->face->info, tmp, w, h, w, sc, sc, shift, 0, gi);
+            int dx = (int)px + x0, dy = (int)(base + 0.5f) + y0;
+            for (int yy = 0; yy < h; yy++) {
+                int ty = dy + yy;
+                if (ty < 0 || ty >= bh) continue;
+                for (int xx = 0; xx < w; xx++) {
+                    int tx = dx + xx;
+                    if (tx < 0 || tx >= bw) continue;
+                    uint8_t v = tmp[yy * w + xx];
+                    uint8_t *d = &a[ty * bw + tx];
+                    if (v > *d) *d = v;
+                }
+            }
+            free(tmp);
+        }
+    }
+    if (e->underline) {
+        int uy = (int)(base + S), uh = S > 1 ? (int)S : 1;
+        int ux0 = (int)((e->gx[0] - ox) * S), ux1 = (int)((g.right - ox) * S);
+        for (int yy = uy; yy < uy + uh && yy < bh; yy++)
+            for (int xx = ux0 < 0 ? 0 : ux0; xx < ux1 && xx < bw; xx++) a[yy * bw + xx] = 255;
+    }
+    /* mask to the clipped box */
+    if (memcmp(&e->box, &e->gbox, sizeof e->box)) {
+        int cx0 = (int)((e->box.left - ox) * S), cx1 = (int)((e->box.right - ox) * S);
+        int cy0 = (int)((e->box.top - oy) * S), cy1 = (int)((e->box.bottom - oy) * S);
+        for (int yy = 0; yy < bh; yy++)
+            for (int xx = 0; xx < bw; xx++)
+                if (xx < cx0 || xx >= cx1 || yy < cy0 || yy >= cy1) a[yy * bw + xx] = 0;
+    }
+    e->handle = plat_text_create(a, bw, bh);
+    e->scale = S; e->bw = bw; e->bh = bh;
+    free(a);
+}
+
+/* drop entries whose pixels changed underneath; build the platform draw list */
+int text_hires_draws(PlatTextDraw *out, int max)
+{
+    float S = plat_output_scale();
+    int n = 0;
+    for (int i = 0; i < MAXHT && n < max; i++) {
+        HiText *e = &ht[i];
+        if (!e->used) continue;
+        if (!e->overlay && fb_hash(e->box) != e->hash) { ht_free(e); continue; }
+        if (!e->handle || e->scale != S) ht_rasterize(e, S);
+        if (!e->handle) continue;
+        PlatTextDraw *d = &out[n++];
+        d->handle = e->handle;
+        d->x = (float)(e->gbox.left - 1); d->y = (float)(e->gbox.top - 1);
+        d->sx = 0; d->sy = 0; d->sw = (float)e->bw; d->sh = (float)e->bh;
+        if (e->overlay) { d->r = e->rgb[0]; d->g = e->rgb[1]; d->b = e->rgb[2]; }
+        else { d->r = g_hw_pal[e->color_idx][0]; d->g = g_hw_pal[e->color_idx][1]; d->b = g_hw_pal[e->color_idx][2]; }
+    }
+    return n;
+}
+
 static void draw_glyphs(uint32_t port, int x, int y, const uint8_t *s, int len)
 {
     Face *f = face_for((int16_t)rdw(port + P_txFont), (uint8_t)rdb(port + P_txFace));
@@ -201,36 +423,69 @@ static void draw_glyphs(uint32_t port, int x, int y, const uint8_t *s, int len)
     bool bold = face & 1, underline = face & 4;
     int mode = (int16_t)rdw(port + P_txMode) & 0x3F;
     uint8_t fg = qd_fg_index(port), bk = qd_bk_index(port);
+    int spextra = (int)((int32_t)rdl(port + P_spExtra) >> 16);
+    bool synth_bold = bold && f != face_get(FONT_SANS_BOLD);
+    static const uint8_t solid[8] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+    if (mode == 0) { /* srcCopy: paint the background cells first */
+        int a, d, l; metrics(port, &a, &d, &l);
+        int cx = x;
+        for (int i = 0; i < len; i++) {
+            Glyph *g = glyph(f, size, s[i]);
+            QRect cell = { (int16_t)(y - a), (int16_t)cx, (int16_t)(y + d), (int16_t)(cx + g->adv) };
+            qd_fill_rect(port, cell, solid, 8, bk, bk);
+            cx += g->adv + (bold ? 1 : 0);
+            if (s[i] == ' ') cx += spextra;
+        }
+    }
+    bool onscreen = pd.base == g_screen_fb;
+    if (g_text_hires && onscreen && (mode == 0 || mode == 1 || mode == 8 || mode == 9 || mode == 36)) {
+        /* screen text goes to the hi-res layer (coordinates relative to the screen) */
+        QRect sclip = { (int16_t)(clip.top - pd.bounds.top), (int16_t)(clip.left - pd.bounds.left),
+                        (int16_t)(clip.bottom - pd.bounds.top), (int16_t)(clip.right - pd.bounds.left) };
+        hitext_add(f, size, synth_bold, underline, fg, s, len, x - pd.bounds.left, y - pd.bounds.top, spextra, sclip);
+        return;
+    }
+    /* offscreen (or special modes): anti-aliased into the 8-bit pixels */
+    uint16_t fr = (uint16_t)rdw(port + P_rgbFg), fgc = (uint16_t)rdw(port + P_rgbFg + 2), fb = (uint16_t)rdw(port + P_rgbFg + 4);
+    static uint16_t pal_rgb[256][3];
+    static uint32_t pal_ctab, pal_seed;
+    if (pd.ctab && rdl(pd.ctab) && (pal_ctab != pd.ctab || pal_seed != rdl(rdl(pd.ctab)))) {
+        pal_ctab = pd.ctab; pal_seed = rdl(rdl(pd.ctab));
+        for (int i = 0; i < 256; i++) qd_index_to_rgb(pd.ctab, (uint8_t)i, &pal_rgb[i][0], &pal_rgb[i][1], &pal_rgb[i][2]);
+    }
+    bool aa = (mode == 0 || mode == 1 || mode == 8 || mode == 9 || mode == 36) && pd.ctab && rdl(pd.ctab);
     int startx = x;
     for (int i = 0; i < len; i++) {
         Glyph *g = glyph(f, size, s[i]);
-        if (mode == 0) { /* srcCopy: paint background cell */
-            int a, d, l; metrics(port, &a, &d, &l);
-            static const uint8_t solid[8] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-            QRect cell = { (int16_t)(y - a), (int16_t)x, (int16_t)(y + d), (int16_t)(x + g->adv) };
-            qd_fill_rect(port, cell, solid, 8, bk, bk);
-        }
-        for (int pass = 0; pass < (bold ? 2 : 1); pass++) {
+        for (int pass = 0; pass < (synth_bold ? 2 : 1); pass++) {
             for (int gy = 0; gy < g->h; gy++) {
                 int py = y + g->yoff + gy;
                 if (py < clip.top || py >= clip.bottom) continue;
                 uint8_t *row = HP(pd.base + (uint32_t)(py - pd.bounds.top) * pd.rowbytes);
                 for (int gx = 0; gx < g->w; gx++) {
-                    if (g->bits[gy * g->w + gx] < 110) continue;
+                    int c = g->bits[gy * g->w + gx];
                     int px = x + g->xoff + gx + pass;
                     if (px < clip.left || px >= clip.right) continue;
                     uint8_t *d = row + (px - pd.bounds.left);
-                    if (mode == 2) *d ^= 0xFF;
-                    else if (mode == 3) *d = bk;
-                    else *d = fg;
+                    if (!aa) {
+                        if (c < 110) continue;
+                        if (mode == 2 || mode == 10) *d ^= 0xFF;
+                        else if (mode == 3 || mode == 11) *d = bk;
+                        else *d = fg;
+                        continue;
+                    }
+                    if (c < 40) continue;
+                    if (c >= 215) { *d = fg; continue; }
+                    const uint16_t *b = pal_rgb[*d];
+                    int r = (fr * c + b[0] * (255 - c)) / 255, gg = (fgc * c + b[1] * (255 - c)) / 255, bb = (fb * c + b[2] * (255 - c)) / 255;
+                    *d = qd_rgb15_to_index(pd.ctab, r >> 11, gg >> 11, bb >> 11);
                 }
             }
         }
         x += g->adv + (bold ? 1 : 0);
-        if (s[i] == ' ') x += (int)((int32_t)rdl(port + P_spExtra) >> 16);
+        if (s[i] == ' ') x += spextra;
     }
     if (underline) {
-        static const uint8_t solid[8] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
         QRect u = { (int16_t)(y + 1), (int16_t)startx, (int16_t)(y + 2), (int16_t)x };
         qd_fill_rect(port, u, solid, 8, fg, bk);
     }

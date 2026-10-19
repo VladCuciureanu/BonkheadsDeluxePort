@@ -6,14 +6,15 @@ replaces the transport layer (the `.MPP` driver calls) with UDP.
 
 ## Roles
 
-| Original role | Menu item | What it does | UDP equivalent |
+| Menu item | Original role | Who listens | UDP behaviour |
 |---|---|---|---|
-| **Joiner** | Net Join | Registers an NBP name, then waits for a host | Binds a UDP port and waits |
-| **Host** | Net Host | Looks up NBP names, picks a joiner, simulates the whole game | Connects to the joiner's IP:port |
+| **NET HOST** | Looks up NBP names, picks a joiner, simulates the whole game | The host | Binds the well-known port (24731, `--port`) and shows its address. It only needs to receive announcements. |
+| **NET JOIN** | Registers an NBP name and waits to be picked | Nobody; it dials out | Asks for the host's address and binds any free port. It sends an "announce" datagram to that address, plus a LAN broadcast, every half second until the host contacts it. |
 
-Note that, at the transport level, the in-game "host" is the side that
-initiates. The joiner listens, so it is the one that needs a reachable
-(port-forwarded) UDP port. This is the reverse of most modern games.
+The game's own roles are unchanged. Only the transport direction is
+flipped: the joiner announces itself and the host learns the joiner's
+NAT-mapped address from that traffic. As a result, only the host needs a
+reachable port.
 
 ## Mapping of AppleTalk calls (`.MPP`, `ioRefNum` -10)
 
@@ -22,8 +23,8 @@ initiates. The joiner listens, so it is the one that needs a reachable
 | 248 | POpenSkt | Open a UDP socket. Always return DDP socket `0x80`, so the socket check on received packets passes on both sides. |
 | 247 | PCloseSkt | Close the UDP socket. |
 | 246 | PWriteDDP | Gather the write-data structure and send one UDP datagram with the payload and DDP type. Complete synchronously: set `ioResult=0` and call the completion flag. |
-| 253 | PRegisterName | Joiner: start listening and answer discovery probes. |
-| 251 | PLookupName | Host: probe LAN broadcast, the `--connect` address, or the lobby. Write NBP tuples into the lookup buffer and bump `numGotten`. |
+| 253 | PRegisterName | Joiner: ask for the host address, then announce periodically. |
+| 251 | PLookupName | Host: bind the well-known port. Every announcing joiner becomes an NBP tuple in the lookup buffer, and `numGotten` is bumped. |
 | 250 | PConfirmName | Always succeeds. |
 | 252 / 254 | PRemoveName / PKillNBP | Stop advertising / cancel the lookup. |
 
@@ -65,7 +66,7 @@ DDP types:
 |---|---|---|
 | 0 | 4 | `"BONK"` magic |
 | 4 | 1 | version |
-| 5 | 1 | kind (0 = DDP, 1 = discovery probe, 2 = discovery reply) |
+| 5 | 1 | kind (0 = DDP, 2 = joiner announce) |
 | 6 | 1 | DDP type |
 | 7 | 1 | reserved |
 | 8 | n | payload |

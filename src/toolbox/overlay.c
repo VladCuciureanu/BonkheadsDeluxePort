@@ -8,8 +8,7 @@
 static char line[2][160];
 static bool active;
 static bool dirty = true;
-static uint32_t port;       /* emulated colour port drawing into `pixels` */
-static uint32_t pixels;
+static uint32_t pixels;     /* banner strip background (emulated memory) */
 static uint8_t composed[SCREEN_W * SCREEN_H];
 
 /* main menu hot spots (from the game's GetPtLoc table) */
@@ -28,45 +27,24 @@ void overlay_banner(const char *l1, const char *l2)
     active = line[0][0] || line[1][0];
 }
 
-static void ensure_port(void)
+static void ensure_strip(void)
 {
-    if (port) return;
-    pixels = mm_new_ptr(SCREEN_W * BANNER_H, true);
-    port = mm_new_ptr(CGRAFPORT_SIZE, true);
-    qd_init_port(port, true);
-    uint32_t pm = rdl(rdl(port + P_portBits));
-    QRect r = { 0, 0, BANNER_H, SCREEN_W };
-    wrl(pm + PM_baseAddr, pixels);
-    wrw(pm + PM_rowBytes, 0x8000 | SCREEN_W);
-    wr_rect(pm + PM_bounds, r);
-    wrl(pm + PM_pmTable, qd_device_ctab());
-    wr_rect(port + P_portRect, r);
-    qd_set_rgn(rdl(port + P_visRgn), r);
+    if (!pixels) pixels = mm_new_ptr(SCREEN_W * BANNER_H, true);
 }
 
-static void set_rgb(uint32_t a, uint16_t r, uint16_t g, uint16_t b) { wrw(a, r); wrw(a + 2, g); wrw(a + 4, b); }
-
+/* the strip background lives in emulated memory; its text is hi-res overlay text */
 static void render(const char *l1, const char *l2)
 {
-    ensure_port();
-    wrl(rdl(rdl(port + P_portBits)) + PM_pmTable, qd_device_ctab());
+    ensure_strip();
     uint32_t ct = qd_device_ctab();
     uint8_t bg = qd_rgb_to_index(ct, 0x1111, 0x1111, 0x1111);
     uint8_t edge = qd_rgb_to_index(ct, 0xFFFF, 0xCCCC, 0x0000);
     memset(HP(pixels), bg, SCREEN_W * BANNER_H);
     memset(HP(pixels), edge, SCREEN_W * 2);
-    wrw(port + P_txFont, 3); wrw(port + P_txSize, 12);
-    const char *ls[2] = { l1, l2 };
-    for (int i = 0; i < 2; i++) {
-        if (!ls[i][0]) continue;
-        wrb(port + P_txFace, i == 0 ? 1 : 0);
-        if (i == 0) set_rgb(port + P_rgbFg, 0xFFFF, 0xCCCC, 0x0000);
-        else set_rgb(port + P_rgbFg, 0xFFFF, 0xFFFF, 0xFFFF);
-        int w = text_width(port, (const uint8_t *)ls[i], (int)strlen(ls[i]));
-        wrw(port + P_pnLoc, (uint16_t)(17 + i * 16));
-        wrw(port + P_pnLoc + 2, (uint16_t)((SCREEN_W - w) / 2 > 6 ? (SCREEN_W - w) / 2 : 6));
-        text_draw(port, (const uint8_t *)ls[i], (int)strlen(ls[i]));
-    }
+    int top = SCREEN_H - BANNER_H;
+    int w1 = text_overlay_width(l1, true), w2 = text_overlay_width(l2, false);
+    text_overlay_set(0, l1, (SCREEN_W - w1) / 2 > 6 ? (SCREEN_W - w1) / 2 : 6, top + 17, true, 0xFF, 0xCC, 0x00);
+    text_overlay_set(1, l2, (SCREEN_W - w2) / 2 > 6 ? (SCREEN_W - w2) / 2 : 6, top + 33, false, 0xFF, 0xFF, 0xFF);
 }
 
 static int current_hint(void)
@@ -83,16 +61,21 @@ static int current_hint(void)
 const uint8_t *overlay_compose(const uint8_t *fb)
 {
     int h = active ? 0 : current_hint();
-    if (!active && !h) { hint = 0; return fb; }
+    if (!active && !h) {
+        if (hint || !dirty) { text_overlay_clear(); dirty = true; }
+        hint = 0;
+        return fb;
+    }
     if (h != hint) { hint = h; dirty = true; }
     if (dirty) {
         if (active) render(line[0], line[1]);
-        else if (h == 1) render("NET HOST: you connect to a friend who chose NET JOIN.",
-                                "You'll be asked for their address; leave it empty to find players on your local network.");
-        else {
+        else if (h == 1) {
             char l2[160];
             snprintf(l2, sizeof l2, "Your address is shown while you wait. Over the internet, forward UDP port %u to this computer.", g_netcfg.port);
-            render("NET JOIN: you wait for a friend to connect to you (they choose NET HOST).", l2);
+            render("NET HOST: host a game. Your friend connects to you by choosing NET JOIN.", l2);
+        } else {
+            render("NET JOIN: join a friend who chose NET HOST.",
+                   "You'll be asked for their address; leave it empty to find a host on your local network.");
         }
         dirty = false;
     }

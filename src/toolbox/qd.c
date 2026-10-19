@@ -285,6 +285,11 @@ void qd_fill_rect(uint32_t port, QRect r, const uint8_t pat[8], int mode, uint8_
     r = rect_sect(r, qd_port_clip(port));
     r = rect_sect(r, pd.bounds);
     if (rect_empty(r)) return;
+    if (pd.base == g_screen_fb) {
+        QRect sr = { (int16_t)(r.top - pd.bounds.top), (int16_t)(r.left - pd.bounds.left),
+                     (int16_t)(r.bottom - pd.bounds.top), (int16_t)(r.right - pd.bounds.left) };
+        hitext_damage_screen(sr);
+    }
     mode &= 0x3F;
     for (int y = r.top; y < r.bottom; y++) {
         uint8_t prow = pat[y & 7];
@@ -378,6 +383,11 @@ static void copy_bits(uint32_t srcbm, uint32_t dstbm, QRect sr, QRect dr, int mo
     if (mask) clip = rect_sect(clip, qd_rgn_box(mask));
     QRect dc = rect_sect(dr, clip);
     if (rect_empty(dc)) return;
+    if (d.base == g_screen_fb) {
+        QRect sdc = { (int16_t)(dc.top - d.bounds.top), (int16_t)(dc.left - d.bounds.left),
+                      (int16_t)(dc.bottom - d.bounds.top), (int16_t)(dc.right - d.bounds.left) };
+        hitext_damage_screen(sdc);
+    }
     int sw = sr.right - sr.left, sh = sr.bottom - sr.top, dw = dr.right - dr.left, dh = dr.bottom - dr.top;
     bool same = sw == dw && sh == dh;
     uint8_t bkidx = port ? qd_bk_index(port) : 0;

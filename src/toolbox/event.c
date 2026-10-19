@@ -16,7 +16,10 @@ void screen_present(bool force)
     uint64_t now = plat_micros();
     if (!force && now - last_present_us < 16000) return;
     last_present_us = now;
-    plat_present(overlay_compose(HP(g_screen_fb)), SCREEN_W, (const uint8_t (*)[3])g_hw_pal);
+    static PlatTextDraw draws[700];
+    const uint8_t *frame = overlay_compose(HP(g_screen_fb));
+    int n = text_hires_draws(draws, 700);
+    plat_present(frame, SCREEN_W, (const uint8_t (*)[3])g_hw_pal, draws, n);
     g_hw_pal_dirty = false;
 }
 
@@ -28,7 +31,8 @@ void evt_idle(void)
 {
     plat_pump();
     if (g_shot_after >= 0 && plat_micros() / 1e6 >= g_shot_after) {
-        plat_save_bmp(g_shot_path, overlay_compose(HP(g_screen_fb)), SCREEN_W, (const uint8_t (*)[3])g_hw_pal);
+        plat_request_capture(g_shot_path);
+        screen_present(true);
         log_info("screenshot saved to %s", g_shot_path);
         extern void app_quit(void);
         app_quit();

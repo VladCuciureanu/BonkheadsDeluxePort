@@ -20,7 +20,14 @@ enum { PEV_MOUSEDOWN = 1, PEV_MOUSEUP = 2, PEV_KEYDOWN = 3, PEV_KEYUP = 4, PEV_A
 bool plat_init(int scale, bool fullscreen);
 void plat_shutdown(void);
 void plat_pump(void);                                    /* process OS events */
-void plat_present(const uint8_t *fb, int pitch, const uint8_t pal[256][3]);
+/* a hi-res text bitmap drawn over the game: (x,y) in 640x480 coordinates,
+ * (sx,sy,sw,sh) the source rectangle in the bitmap's own output pixels */
+typedef struct { int handle; float x, y; float sx, sy, sw, sh; uint8_t r, g, b; } PlatTextDraw;
+void plat_present(const uint8_t *fb, int pitch, const uint8_t pal[256][3], const PlatTextDraw *draws, int ndraws);
+float plat_output_scale(void);                 /* output pixels per 640x480 pixel */
+int plat_text_create(const uint8_t *alpha, int w, int h);
+void plat_text_destroy(int handle);
+void plat_request_capture(const char *path);   /* save the next presented frame (BMP) */
 const InputState *plat_input(void);
 bool plat_pop_event(PlatEvent *ev);
 void plat_flush_events(void);

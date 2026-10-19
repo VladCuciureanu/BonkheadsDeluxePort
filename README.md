@@ -123,22 +123,19 @@ as the game requests. Saved games and preferences go in the game data folder.
 
 ### Internet multiplayer
 
-The original game's roles are kept. Hover over a menu button to see what it
-does:
+Hover over a menu button to see what it does.
 
-- **NET JOIN** waits for a friend to connect to you.
-  - While you wait, a banner shows the address to give your friend: your
-    LAN address, and the port to forward for internet play (UDP 24731 by
-    default, changed with `--port`).
-  - Over the internet, share your public IP and forward that UDP port on
-    your router.
-- **NET HOST** connects to a friend who chose NET JOIN. It asks for their
-  address, for example `203.0.113.7` or `192.168.1.20:24731`, and remembers
-  the last one you used. Leave the address empty to search your local
-  network only. The friend then appears in the "Where's your brother?"
-  list: pick them, click OK, and play continues as in 1997.
+- **NET HOST** hosts a game. While you wait, a banner shows your LAN address
+  and the port to forward. On the internet, give your friend your public IP
+  and forward UDP port 24731 to your computer (change it with `--port`).
+  When your friend shows up in the "Where's your brother?" list, pick them
+  and click OK.
+- **NET JOIN** joins a friend who chose NET HOST. Type the address shown on
+  their screen, for example `203.0.113.7` or `192.168.1.20`. It's remembered
+  for next time. Leave it empty to find a host on your local network. The
+  joining side dials out, so only the host needs to forward a port.
 
-For scripts, `--connect HOST[:PORT]` adds an address without the prompt.
+For scripts, `--connect HOST[:PORT]` gives NET JOIN an address and skips the prompt.
 
 The transport layer adds two things on top of the original protocol, to cope
 with real internet links:
@@ -174,13 +171,21 @@ trip with 5% packet loss.
   high-score entry and the ending have not been tested yet.
 - **The high-score panel on the main menu,** which currently stays black.
 
+**Text and fonts:**
+
+- Text drawn on screen is rendered at the window's full resolution. It uses
+  the OS interface font: Segoe UI on Windows, the system font on macOS, and
+  Noto Sans or DejaVu Sans on Linux. These stand in for the classic Mac
+  Chicago, Geneva and Helvetica.
+- The game's own "Thwack" font is rendered from its embedded TrueType data.
+- Text the game draws into offscreen buffers is anti-aliased into its
+  256-color palette.
+- `--pixel-text` restores the old low-resolution text.
+
 **Approximations:**
 
 - QuickDraw regions are bounding rectangles.
 - Round rects and ovals draw as rectangles.
-- The classic Mac system fonts (Chicago, Geneva, Helvetica) are replaced
-  by host TrueType fonts. The game's own "Thwack" font is rendered from
-  its embedded TrueType data.
 
 **Not ported:** the level editor ("The Bonkreator").
 

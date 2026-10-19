@@ -147,17 +147,28 @@ static void send_raw(UdpAddr to, uint8_t kind, uint8_t type, const uint8_t *data
     udp_send(sock, to, buf, len + 8);
 }
 
-static bool ensure_socket(void)
+/* The host (game's NBP lookup side) listens on the well-known port; the
+ * joiner dials out from any free port, so only the host needs forwarding. */
+static bool ensure_socket(bool listen)
 {
     if (sock >= 0) return true;
-    sock = udp_open(g_netcfg.port);
-    if (sock < 0) {
+    sock = listen ? udp_open(g_netcfg.port) : udp_open(0);
+    if (sock < 0 && listen) {
         log_warn("net: UDP port %u busy, using an ephemeral port", g_netcfg.port);
         sock = udp_open(0);
     }
     if (sock < 0) { log_warn("net: cannot open UDP socket"); return false; }
-    log_info("net: listening on UDP port %u (node %d)", udp_local_port(sock), my_node);
+    log_info("net: %s on UDP port %u (node %d)", listen ? "hosting" : "joining", udp_local_port(sock), my_node);
     return true;
+}
+
+static void close_socket(void)
+{
+    if (sock >= 0) udp_close(sock);
+    sock = -1;
+    memset(peers, 0, sizeof peers);
+    rxn = 0;
+    have_last_seq = false;
 }
 
 void net_init(void)
@@ -235,15 +246,17 @@ static void entity_strings(uint32_t ent, char *obj, char *type)
     pstr_to_c(ent, type, 64);
 }
 
-static void probe_peers(void)
+/* joiner -> host announcement: "I'm <name>, pick me" */
+static void announce(void)
 {
-    uint8_t q[64];
-    size_t n = strlen(adv_type);
-    q[0] = (uint8_t)n; memcpy(q + 1, adv_type, n);
+    uint8_t r[140]; size_t k = 0;
+    size_t a = strlen(adv_object), t = strlen(adv_type);
+    r[k++] = (uint8_t)a; memcpy(r + k, adv_object, a); k += a;
+    r[k++] = (uint8_t)t; memcpy(r + k, adv_type, t); k += t;
     UdpAddr bc = { 0xFFFFFFFFu, g_netcfg.port };
-    send_raw(bc, K_PROBE, 0, q, n + 1);
-    for (int i = 0; i < g_netcfg.nconnect; i++) send_raw(g_netcfg.connect[i], K_PROBE, 0, q, n + 1);
-    if (host_target_ok) send_raw(host_target, K_PROBE, 0, q, n + 1);
+    send_raw(bc, K_ADVERT, 0, r, k);
+    for (int i = 0; i < g_netcfg.nconnect; i++) send_raw(g_netcfg.connect[i], K_ADVERT, 0, r, k);
+    if (host_target_ok) send_raw(host_target, K_ADVERT, 0, r, k);
 }
 
 /* ---------------------------------------------------------------- settings & UI */
@@ -271,17 +284,17 @@ static void cfg_save(void)
     fclose(f);
 }
 
-static void host_prompt(void)
+static void join_prompt(void)
 {
     static bool loaded;
     if (!loaded) { cfg_load(); loaded = true; }
     char buf[64]; snprintf(buf, sizeof buf, "%s", host_addr);
     char help2[128];
-    snprintf(help2, sizeof help2, "Format: IP or name, optionally :port (default %u). Empty = local network only.", g_netcfg.port);
+    snprintf(help2, sizeof help2, "Optionally add :port (default %u). Leave empty to find a host on your local network.", g_netcfg.port);
     host_target_ok = false;
-    if (!ui_prompt("Connect to a friend who chose NET JOIN",
-                   "Type your friend's address, e.g. 203.0.113.7 or 192.168.1.20:24731", help2, buf, sizeof buf))
-        buf[0] = 0;  /* cancelled: search the local network only */
+    if (!ui_prompt("Join a friend who chose NET HOST",
+                   "Type the address shown on their screen, e.g. 203.0.113.7 or 192.168.1.20", help2, buf, sizeof buf))
+        buf[0] = 0;  /* cancelled: look on the local network only */
     snprintf(host_addr, sizeof host_addr, "%s", buf);
     cfg_save();
     if (buf[0]) {
@@ -296,24 +309,30 @@ static void update_banner(void)
     uint16_t port = sock >= 0 ? udp_local_port(sock) : g_netcfg.port;
     if (lookup_pb) {
         int found = rdw(lookup_pb + 42);
-        if (host_addr[0] && !host_target_ok)
-            snprintf(l1, sizeof l1, "Couldn't find \"%s\". Searching your local network only.", host_addr);
-        else if (host_addr[0])
-            snprintf(l1, sizeof l1, "Looking for %s and players on your local network...", host_addr);
-        else
-            snprintf(l1, sizeof l1, "Looking for players on your local network...");
-        if (found)
-            snprintf(l2, sizeof l2, "Found %d. Click a name in the list, then click OK.", found);
-        else if (ticks_now() - lookup_started > 300)
-            snprintf(l2, sizeof l2, "Nobody yet. Your friend must be on NET JOIN; over the internet their UDP port must be forwarded.");
-        else
-            snprintf(l2, sizeof l2, "Your friend should be waiting on the NET JOIN screen.");
+        if (found) {
+            snprintf(l1, sizeof l1, found == 1 ? "Your friend is here!" : "%d players want to join!", found);
+            snprintf(l2, sizeof l2, "Click a name in the list, then click OK to start.");
+        } else {
+            char ip[64] = "this computer's IP";
+            udp_local_ip(ip, sizeof ip);
+            snprintf(l1, sizeof l1, "Hosting: give your friend your address, then they choose NET JOIN.");
+            if (port == 24731)
+                snprintf(l2, sizeof l2, "Same network: %s    Internet: your public IP (forward UDP port %u to this computer)", ip, port);
+            else
+                snprintf(l2, sizeof l2, "Same network: %s:%u    Internet: your public IP:%u (forward UDP port %u)", ip, port, port, port);
+        }
         overlay_banner(l1, l2);
     } else if (advertising && !joined) {
-        char ip[64] = "this computer's IP";
-        udp_local_ip(ip, sizeof ip);
-        snprintf(l1, sizeof l1, "Waiting for your friend to choose NET HOST and enter your address...");
-        snprintf(l2, sizeof l2, "Same network: %s:%u    Internet: your public IP, with UDP port %u forwarded", ip, port, port);
+        if (host_addr[0] && !host_target_ok)
+            snprintf(l1, sizeof l1, "Couldn't find \"%s\". Looking on your local network instead...", host_addr);
+        else if (host_addr[0])
+            snprintf(l1, sizeof l1, "Contacting %s...", host_addr);
+        else
+            snprintf(l1, sizeof l1, "Looking for a host on your local network...");
+        if (ticks_now() - lookup_started > 600)
+            snprintf(l2, sizeof l2, "No answer yet. Check the address; the host must be on NET HOST with UDP port %u forwarded.", g_netcfg.port);
+        else
+            snprintf(l2, sizeof l2, "Waiting for the host to pick your name and click OK.");
         overlay_banner(l1, l2);
     } else {
         overlay_banner(NULL, NULL);
@@ -348,13 +367,13 @@ int16_t net_driver_control(uint32_t pb, bool async)
     cur_async = async;
     int16_t cs = (int16_t)rdw(pb + 26);
     switch (cs) {
-    case 248: /* POpenSkt */
-        if (!ensure_socket()) { wrw(pb + 16, (uint16_t)-1); return -1; }
+    case 248: /* POpenSkt: the UDP socket is bound once the role is known */
         wrb(pb + 28, MY_SOCKET);
         complete_pb(pb, 0);
         return 0;
     case 247: /* PCloseSkt */
         advertising = false; lookup_pb = 0;
+        close_socket();
         update_banner();
         complete_pb(pb, 0);
         return 0;
@@ -364,18 +383,20 @@ int16_t net_driver_control(uint32_t pb, bool async)
     case 253: { /* PRegisterName: entityPtr -> NTE; entity strings at nte+9 */
         uint32_t nte = rdl(pb + 30);
         entity_strings(nte + 9, adv_object, adv_type);
-        advertising = ensure_socket();
+        if (!g_netcfg.nconnect) join_prompt();
+        advertising = ensure_socket(false);
         joined = false;
+        lookup_started = ticks_now();
+        lookup_last_probe = 0;
         update_banner();
-        log_info("net: waiting for a host as \"%s\" (UDP port %u)", adv_object, udp_local_port(sock));
+        log_info("net: joining as \"%s\"", adv_object);
         complete_pb(pb, 0);
         return 0;
     }
     case 251: { /* PLookupName */
         char obj[64];
         entity_strings(rdl(pb + 30), obj, adv_type);
-        ensure_socket();
-        if (!lookup_pb) host_prompt();
+        ensure_socket(true);
         lookup_pb = pb;
         lookup_started = ticks_now();
         wrw(pb + 42, 0);
@@ -542,10 +563,10 @@ void net_poll(void)
     int n;
     while ((n = udp_recv(sock, &from, buf, sizeof buf)) >= 0) handle_datagram(from, buf, n);
     uint32_t now = ticks_now();
-    if (lookup_pb && now - lookup_last_probe >= 30) {
+    if (advertising && !joined && now - lookup_last_probe >= 30) {
         lookup_last_probe = now;
+        announce();
         update_banner();
-        probe_peers();
     }
     /* deliver queued packets: control packets immediately, game packets only
      * when the game consumed the previous one (or after a short timeout) */

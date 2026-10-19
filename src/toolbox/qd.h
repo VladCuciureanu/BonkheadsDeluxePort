@@ -124,6 +124,14 @@ int text_width(uint32_t port, const uint8_t *s, int len);
 void text_font_info(uint32_t port, int *ascent, int *descent, int *widmax, int *leading);
 void text_init(void);
 
+/* hi-res text layer (text.c) */
+void hitext_damage_screen(QRect r);   /* something painted this screen area */
+int text_hires_draws(PlatTextDraw *out, int max);
+void text_overlay_set(int slot, const char *s, int x, int baseline, bool bold, uint8_t r, uint8_t g, uint8_t b);
+void text_overlay_clear(void);
+int text_overlay_width(const char *s, bool bold);
+extern bool g_text_hires;
+
 /* windows (window.c) */
 uint32_t win_front(void);
 void win_save_under(uint32_t w);

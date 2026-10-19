@@ -222,7 +222,7 @@ static void T_Pack6(uint16_t op)
 }
 
 /* ------------------------------------------------------------ simple modal UI helpers (used by StdFile / popup) */
-static void ui_fill(QRect r, uint8_t c) { for (int y = r.top; y < r.bottom; y++) if (y >= 0 && y < SCREEN_H) for (int x = r.left; x < r.right; x++) if (x >= 0 && x < SCREEN_W) wrb(g_screen_fb + (uint32_t)y * SCREEN_W + x, c); }
+static void ui_fill(QRect r, uint8_t c) { hitext_damage_screen(r); for (int y = r.top; y < r.bottom; y++) if (y >= 0 && y < SCREEN_H) for (int x = r.left; x < r.right; x++) if (x >= 0 && x < SCREEN_W) wrb(g_screen_fb + (uint32_t)y * SCREEN_W + x, c); }
 static void ui_frame(QRect r, uint8_t c)
 {
     QRect a = { r.top, r.left, (int16_t)(r.top + 1), r.right }, b = { (int16_t)(r.bottom - 1), r.left, r.bottom, r.right };
@@ -248,6 +248,7 @@ static uint8_t *ui_save(QRect r)
 }
 static void ui_restore(QRect r, uint8_t *b)
 {
+    hitext_damage_screen(r);
     int w = r.right - r.left, h = r.bottom - r.top;
     for (int y = 0; y < h; y++) memcpy(HP(g_screen_fb + (uint32_t)(r.top + y) * SCREEN_W + r.left), b + (size_t)y * w, w);
     free(b);
