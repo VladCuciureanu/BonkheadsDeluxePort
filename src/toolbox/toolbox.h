@@ -15,9 +15,10 @@ void toolbox_init(void);
 #define ARG16()  ((uint16_t)POP16())
 #define ARGS16() ((int16_t)POP16())
 #define ARG32()  ((uint32_t)POP32())
-#define RET8(v)  wrw(A[7], ((uint32_t)(uint8_t)(v)) << 8)
-#define RET16(v) wrw(A[7], (uint16_t)(v))
-#define RET32(v) wrl(A[7], (uint32_t)(v))
+/* v is evaluated before A[7] is read: it may itself pop arguments (ARG32() etc.) */
+#define RET8(v)  do { uint32_t r_ = (uint8_t)(v); wrw(A[7], r_ << 8); } while (0)
+#define RET16(v) do { uint32_t r_ = (uint16_t)(v); wrw(A[7], r_); } while (0)
+#define RET32(v) do { uint32_t r_ = (uint32_t)(v); wrl(A[7], r_); } while (0)
 
 /* OS trap result in D0 with condition codes as after tst.w d0 */
 static inline void os_result(int16_t err)

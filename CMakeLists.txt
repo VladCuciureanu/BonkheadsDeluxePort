@@ -8,8 +8,15 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # archive; nothing derived from the original program is stored in this repo.
 set(BONKHEADS_SIT "${CMAKE_SOURCE_DIR}/Bonkheads_Deluxe.SIT" CACHE FILEPATH
     "Path to the original Bonkheads_Deluxe.SIT (StuffIt 5) archive")
+# Build the port (runtime, Toolbox, platform) against an empty game image
+# instead of recompiling the archive. The result links and runs --help but
+# cannot play; it lets CI check the port sources without the copyrighted game.
+option(BONKHEADS_STUB_GAME "Link against an empty stub instead of the recompiled game" OFF)
+option(BONKHEADS_WERROR "Treat warnings in the port sources as errors" OFF)
 
-find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+if(NOT BONKHEADS_STUB_GAME)
+    find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+endif()
 
 include(FetchContent)
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
@@ -33,28 +40,33 @@ if(NOT EXISTS "${STB_DIR}/stb_truetype.h")
 endif()
 
 set(DATA_DIR "${CMAKE_BINARY_DIR}/data")
-set(GEN_DIR "${CMAKE_BINARY_DIR}/gen")
-set(APP_RSRC "${DATA_DIR}/Bonkheads Deluxe/Bonkheads Deluxe.rsrc")
-set(GEN_SOURCES
-    ${GEN_DIR}/recomp_seg1.c ${GEN_DIR}/recomp_seg2.c ${GEN_DIR}/recomp_seg3.c
-    ${GEN_DIR}/recomp_seg4.c ${GEN_DIR}/recomp_seg5.c ${GEN_DIR}/recomp_seg7.c
-    ${GEN_DIR}/recomp_table.c)
+if(BONKHEADS_STUB_GAME)
+    set(GEN_DIR "${CMAKE_SOURCE_DIR}/tools/stub")
+    set(GEN_SOURCES ${GEN_DIR}/recomp_table.c)
+else()
+    set(GEN_DIR "${CMAKE_BINARY_DIR}/gen")
+    set(APP_RSRC "${DATA_DIR}/Bonkheads Deluxe/Bonkheads Deluxe.rsrc")
+    set(GEN_SOURCES
+        ${GEN_DIR}/recomp_seg1.c ${GEN_DIR}/recomp_seg2.c ${GEN_DIR}/recomp_seg3.c
+        ${GEN_DIR}/recomp_seg4.c ${GEN_DIR}/recomp_seg5.c ${GEN_DIR}/recomp_seg7.c
+        ${GEN_DIR}/recomp_table.c)
 
-file(GLOB TOOL_SCRIPTS ${CMAKE_SOURCE_DIR}/tools/*.py)
+    file(GLOB TOOL_SCRIPTS ${CMAKE_SOURCE_DIR}/tools/*.py)
 
-add_custom_command(
-    OUTPUT "${APP_RSRC}"
-    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/sit5.py --extract "${BONKHEADS_SIT}" "${DATA_DIR}"
-    DEPENDS "${BONKHEADS_SIT}" ${CMAKE_SOURCE_DIR}/tools/sit5.py
-    COMMENT "Extracting original game archive"
-    VERBATIM)
+    add_custom_command(
+        OUTPUT "${APP_RSRC}"
+        COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/sit5.py --extract "${BONKHEADS_SIT}" "${DATA_DIR}"
+        DEPENDS "${BONKHEADS_SIT}" ${CMAKE_SOURCE_DIR}/tools/sit5.py
+        COMMENT "Extracting original game archive"
+        VERBATIM)
 
-add_custom_command(
-    OUTPUT ${GEN_SOURCES} ${GEN_DIR}/recomp_funcs.h
-    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp.py "${APP_RSRC}" "${GEN_DIR}"
-    DEPENDS "${APP_RSRC}" ${TOOL_SCRIPTS}
-    COMMENT "Recompiling 68k code to C"
-    VERBATIM)
+    add_custom_command(
+        OUTPUT ${GEN_SOURCES} ${GEN_DIR}/recomp_funcs.h
+        COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/recomp.py "${APP_RSRC}" "${GEN_DIR}"
+        DEPENDS "${APP_RSRC}" ${TOOL_SCRIPTS}
+        COMMENT "Recompiling 68k code to C"
+        VERBATIM)
+endif()
 
 file(GLOB_RECURSE PORT_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.c)
@@ -67,15 +79,22 @@ if(WIN32)
     set_target_properties(bonkheads PROPERTIES WIN32_EXECUTABLE OFF)
 endif()
 if(MSVC)
-    target_compile_options(bonkheads PRIVATE /W3 /wd4996 /bigobj)
-    set_source_files_properties(${GEN_SOURCES} PROPERTIES COMPILE_OPTIONS "/W0")
+    target_compile_options(bonkheads PRIVATE /W3 /wd4996 /bigobj $<$<BOOL:${BONKHEADS_WERROR}>:/WX>)
+    if(NOT BONKHEADS_STUB_GAME)
+        set_source_files_properties(${GEN_SOURCES} PROPERTIES COMPILE_OPTIONS "/W0")
+    endif()
 else()
-    target_compile_options(bonkheads PRIVATE -Wall -Wno-unused-label -Wno-unused-variable)
-    set_source_files_properties(${GEN_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
+    target_compile_options(bonkheads PRIVATE -Wall -Wno-unused-label -Wno-unused-variable
+        $<$<BOOL:${BONKHEADS_WERROR}>:-Werror>)
+    if(NOT BONKHEADS_STUB_GAME)
+        set_source_files_properties(${GEN_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
+    endif()
     target_link_libraries(bonkheads PRIVATE m)
 endif()
 
 # Ship the extracted resource forks next to the executable.
-add_custom_command(TARGET bonkheads POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${DATA_DIR}" "$<TARGET_FILE_DIR:bonkheads>/data"
-    VERBATIM)
+if(NOT BONKHEADS_STUB_GAME)
+    add_custom_command(TARGET bonkheads POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${DATA_DIR}" "$<TARGET_FILE_DIR:bonkheads>/data"
+        VERBATIM)
+endif()

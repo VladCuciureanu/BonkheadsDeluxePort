@@ -128,7 +128,7 @@ void qd_index_to_rgb(uint32_t ctab, uint8_t idx, uint16_t *r, uint16_t *g, uint1
 
 uint8_t qd_rgb_to_index(uint32_t ctab, uint16_t r, uint16_t g, uint16_t b)
 {
-    uint32_t p;
+    uint32_t p = 0;
     int n = ctab_entries(ctab, &p);
     if (n <= 0) { ctab = qd_device_ctab(); n = ctab_entries(ctab, &p); }
     uint32_t seed = rdl(p);

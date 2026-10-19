@@ -10,7 +10,14 @@
 #include <stdlib.h>
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
 #include "stb_truetype.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 typedef struct {
     int16_t id;
@@ -630,7 +637,7 @@ static int16_t fond_id_by_name(const char *name)
 {
     extern int16_t res_find_named_id(uint32_t type, const char *name);
     int16_t id = res_find_named_id(OSTYPE('F','O','N','D'), name);
-    if (id) { game_font_id = id; snprintf(game_font_name, sizeof game_font_name, "%s", name); }
+    if (id) { game_font_id = id; snprintf(game_font_name, sizeof game_font_name, "%.*s", (int)sizeof game_font_name - 1, name); }
     return id;
 }
 

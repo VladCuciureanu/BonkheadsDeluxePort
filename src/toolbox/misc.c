@@ -108,7 +108,6 @@ static void T_Debugger(uint16_t op) { (void)op; log_warn("Debugger trap ignored"
 static void T_DebugStr(uint16_t op) { (void)op; char s[256]; pstr_to_c(ARG32(), s, sizeof s); log_warn("DebugStr: %s", s); }
 static void T_SwapMMUMode(uint16_t op) { (void)op; D[0] = 1; }
 static void T_HWPriv(uint16_t op) { (void)op; os_result(0); }
-static void T_noop_os(uint16_t op) { (void)op; os_result(0); }
 static void T_SysEnvirons(uint16_t op)
 {
     (void)op;

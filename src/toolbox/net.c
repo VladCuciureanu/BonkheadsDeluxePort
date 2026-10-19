@@ -270,7 +270,7 @@ static void cfg_load(void)
     char line[256];
     while (fgets(line, sizeof line, f)) {
         line[strcspn(line, "\r\n")] = 0;
-        if (!strncmp(line, "host_address=", 13)) snprintf(host_addr, sizeof host_addr, "%s", line + 13);
+        if (!strncmp(line, "host_address=", 13)) snprintf(host_addr, sizeof host_addr, "%.*s", (int)sizeof host_addr - 1, line + 13);
     }
     fclose(f);
 }

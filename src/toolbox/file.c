@@ -15,6 +15,8 @@
 #define mkdir_host(p) _mkdir(p)
 #else
 #include <unistd.h>
+#include <dirent.h>
+#include <strings.h>
 #define mkdir_host(p) mkdir(p, 0755)
 #endif
 
@@ -30,6 +32,41 @@ bool fs_exists(const char *path)
     struct stat st;
     return stat(path, &st) == 0;
 }
+
+#if !defined(_WIN32)
+/* HFS names are case-insensitive but many host filesystems are not: fix up
+ * the case of each component of rel (relative to the game folder) to match an
+ * existing host file. The last component also matches its .rsrc/.finf
+ * companions, so a file that only has a resource fork is still found. */
+static void match_case(char *rel)
+{
+    char dir[1100];
+    snprintf(dir, sizeof dir, "%s", g_game_dir);
+    for (char *comp = rel; *comp;) {
+        char *end = strchr(comp, '/');
+        size_t len = end ? (size_t)(end - comp) : strlen(comp);
+        char probe[1200];
+        snprintf(probe, sizeof probe, "%s/%.*s", dir, (int)len, comp);
+        if (!fs_exists(probe)) {
+            DIR *d = opendir(dir);
+            struct dirent *e;
+            while (d && (e = readdir(d))) {
+                size_t l = strlen(e->d_name);
+                bool same = l == len && !strncasecmp(e->d_name, comp, len);
+                if (!end && l == len + 5 && !strncasecmp(e->d_name, comp, len) &&
+                    (!strcasecmp(e->d_name + len, ".rsrc") || !strcasecmp(e->d_name + len, ".finf")))
+                    same = true;
+                if (same) { memcpy(comp, e->d_name, len); break; }
+            }
+            if (d) closedir(d);
+        }
+        if (!end) break;
+        size_t dl = strlen(dir);
+        snprintf(dir + dl, sizeof dir - dl, "/%.*s", (int)len, comp);
+        comp = end + 1;
+    }
+}
+#endif
 
 bool fs_resolve(int16_t vref, int32_t dir, const char *name, char *out, size_t outsz, bool rsrc)
 {
@@ -49,6 +86,9 @@ bool fs_resolve(int16_t vref, int32_t dir, const char *name, char *out, size_t o
     }
     rel[n] = 0;
     if (!n) { snprintf(out, outsz, "%s", g_game_dir); return false; }
+#if !defined(_WIN32)
+    match_case(rel);
+#endif
     snprintf(out, outsz, "%s/%s%s", g_game_dir, rel, rsrc ? ".rsrc" : "");
     return true;
 }

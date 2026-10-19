@@ -68,8 +68,15 @@ You need:
 Put your `Bonkheads_Deluxe.SIT` in the repository root, or pass
 `-DBONKHEADS_SIT=/path/to/it`.
 
-**Windows** (Visual Studio 2022/2026 with C++ tools): run `build.bat`. To run
-the CMake steps yourself from a developer prompt:
+### Windows
+
+You need Visual Studio 2022 or 2026 with the "Desktop development with C++"
+workload, which includes CMake and Ninja. Python comes from python.org or the
+Microsoft Store.
+
+`build.bat` sets up the VS 2026 x64 environment, then configures and builds
+into `build/`. Extra arguments go to CMake. For another Visual Studio version,
+run the CMake steps yourself from an "x64 Native Tools Command Prompt":
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -79,22 +86,63 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-**macOS / Linux:**
+### macOS
+
+Install the Xcode command-line tools (`xcode-select --install`), then CMake
+and, optionally, Ninja:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+brew install cmake ninja
 ```
 
 ```bash
-cmake --build build -j
+./build.sh
 ```
 
-On Linux, install the SDL3 build dependencies first. On Debian/Ubuntu those
-are `libx11-dev`, `libxext-dev`, `libwayland-dev`, `libasound2-dev`,
-`libpulse-dev` and so on.
+### Linux
+
+Install a compiler, CMake, Python 3 and SDL3's build dependencies. On
+Debian/Ubuntu:
+
+```bash
+sudo apt-get install build-essential cmake ninja-build python3 pkg-config libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libdbus-1-dev libudev-dev libdrm-dev libgbm-dev
+```
+
+```bash
+./build.sh
+```
+
+Text uses Noto Sans or DejaVu Sans if one is installed (`fonts-noto-core`
+or `fonts-dejavu-core`).
+
+`build.sh` uses Ninja when it is installed and passes extra arguments to
+CMake, for example `./build.sh -DBONKHEADS_SIT=$HOME/Bonkheads_Deluxe.SIT`.
+Set `BUILD_DIR` or `BUILD_TYPE` (default `RelWithDebInfo`) to change the
+output folder or configuration.
 
 The game ends up in `build/` (`bonkheads.exe` on Windows, `bonkheads` on
 macOS/Linux), with its data in `build/data/`.
+
+### Building without the game (CI)
+
+`-DBONKHEADS_STUB_GAME=ON` builds the runtime, Toolbox and platform code
+against an empty stub (`tools/stub/recomp_table.c`) instead of the
+recompiled game. It doesn't need the archive or Python. The result only runs
+`--help`, but it shows the port compiles and links. `-DBONKHEADS_WERROR=ON`
+turns warnings in the port sources into errors.
+
+```bash
+./build.sh -DBONKHEADS_STUB_GAME=ON -DBONKHEADS_WERROR=ON
+```
+
+The tools have unit tests that need no game data:
+
+```bash
+python -m unittest discover -s tools/tests
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs both on Windows, Linux and
+macOS.
 
 ## Playing
 
@@ -165,8 +213,8 @@ trip with 5% packet loss.
 
 **Not yet verified:**
 
-- **macOS and Linux builds.** The code only uses SDL3, standard C and BSD
-  sockets, but the build has only been run on Windows so far.
+- **Running on macOS and Linux.** The port builds on both (Linux with GCC
+  and Clang, macOS in CI), but the game has only been played on Windows.
 - **The whole game played through.** Later worlds, bosses, save/load,
   high-score entry and the ending have not been tested yet.
 - **The high-score panel on the main menu,** which currently stays black.
