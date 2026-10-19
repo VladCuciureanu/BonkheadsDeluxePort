@@ -54,7 +54,10 @@ void trap_dispatch(uint16_t op)
         return;
     }
     if (g_log_trace) log_trace("trap %s ($%04X) sp=%08X", e->name, op, A[7]);
+    uint16_t outer = g_cur_trap;
+    g_cur_trap = op;
     e->fn(op);
+    g_cur_trap = outer;
     if ((op & 0x0C00) == 0x0C00) {
         /* auto-pop: return straight to the caller of the glue routine */
         log_warn("auto-pop trap $%04X not supported", op);

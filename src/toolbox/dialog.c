@@ -1,5 +1,6 @@
 /* Dialog Manager, Control Manager and alerts. */
 #include "qd.h"
+#include "runtime/layout.h"
 #include "res.h"
 #include "event.h"
 #include <stdio.h>
@@ -26,6 +27,7 @@ typedef struct {
     int edit;          /* current edit item (1-based) or 0 */
     bool sel_all;
     bool drawn;
+    bool needs_update;   /* send the filter one update event, like a newly shown window */
 } DlgInfo;
 
 #define MAXDLG 8
@@ -277,6 +279,7 @@ static uint32_t build_dialog(uint32_t storage, QRect bounds, uint32_t title, boo
     if (!di) di = &dlgs[0];
     memset(di, 0, sizeof *di);
     di->dlg = d;
+    di->needs_update = true;
     if (!ditl) ditl = res_peek(OSTYPE('D','I','T','L'), ditl_id, &ditl_len);
     if (ditl && ditl_len >= 2) {
         int n = ((ditl[0] << 8) | ditl[1]) + 1;
@@ -493,16 +496,18 @@ static void T_ModalDialog(uint16_t op)
     if (!di) { wrw(itemp, 1); return; }
     if (!di->drawn) draw_dialog(di);
     uint32_t ev = mm_new_ptr(16, true);
-    bool sent_update = false;
     for (;;) {
+        evt_idle();
         if (evt_quit_requested()) { wrw(itemp, 2); break; }
-        if (!sent_update) {
+        if (di->needs_update) {
+            /* one update event per newly shown dialog, as the Window Manager would */
             memset(HP(ev), 0, 16);
             wrw(ev, 6); wrl(ev + 2, d); wrl(ev + 6, ticks_now());
-            sent_update = true;
-        } else {
-            evt_idle();
-            if (!evt_next(0xFFFF & ~0x0400, ev, true)) { memset(HP(ev), 0, 16); wrl(ev + 6, ticks_now()); }
+            di->needs_update = false;
+        } else if (!evt_next(0xFFFF & ~0x0400, ev, true)) {
+            memset(HP(ev), 0, 16); wrl(ev + 6, ticks_now());
+            const InputState *in = plat_input();
+            wrw(ev + 10, (uint16_t)in->mouse_y); wrw(ev + 12, (uint16_t)in->mouse_x); wrw(ev + 14, in->modifiers);
         }
         wrw(itemp, 0);
         if (filter && call_filter(filter, d, ev, itemp)) break;

@@ -10,7 +10,7 @@
 
 uint8_t qd_rgn_to_black(void);
 #define MAXWIN 32
-typedef struct { uint32_t w; uint8_t *under; QRect ur; bool own_storage; } WinInfo;
+typedef struct { uint32_t w; uint8_t *under; QRect ur; bool own_storage; HiTextSnap *text_under; } WinInfo;
 static WinInfo wins[MAXWIN];   /* index 0 = front */
 static int nwins;
 
@@ -18,6 +18,21 @@ static WinInfo *info(uint32_t w)
 {
     for (int i = 0; i < nwins; i++) if (wins[i].w == w) return &wins[i];
     return NULL;
+}
+
+static QRect struct_rect(uint32_t w);
+
+/* Screen rectangles of visible windows in front of `w` (which would clip any
+ * drawing into w on a real Mac). Returns the count; 0 if w is not a window. */
+int win_occluders(uint32_t w, QRect *out, int max)
+{
+    int k = -1;
+    for (int i = 0; i < nwins; i++) if (wins[i].w == w) { k = i; break; }
+    if (k <= 0) return 0;
+    int n = 0;
+    for (int i = 0; i < k && n < max; i++)
+        if (rdb(wins[i].w + W_visible)) out[n++] = struct_rect(wins[i].w);
+    return n;
 }
 
 bool win_exists_refcon(uint32_t refcon)
@@ -76,6 +91,7 @@ void win_save_under(uint32_t w)
     if (r.top == 0 && r.left == 0 && r.bottom == SCREEN_H && r.right == SCREEN_W) { wi->ur = r; return; }
     int ww = r.right - r.left, hh = r.bottom - r.top;
     wi->under = (uint8_t *)malloc((size_t)ww * hh);
+    wi->text_under = hitext_save(r);
     for (int y = 0; y < hh; y++) memcpy(wi->under + (size_t)y * ww, HP(g_screen_fb + (uint32_t)(r.top + y) * SCREEN_W + r.left), ww);
     wi->ur = r;
 }
@@ -89,6 +105,7 @@ void win_restore_under(uint32_t w)
     hitext_damage_screen(r);
     for (int y = 0; y < hh; y++) memcpy(HP(g_screen_fb + (uint32_t)(r.top + y) * SCREEN_W + r.left), wi->under + (size_t)y * ww, ww);
     free(wi->under); wi->under = NULL;
+    hitext_restore(wi->text_under); wi->text_under = NULL;
 }
 
 static void fill_screen(QRect r, uint8_t idx)
@@ -159,6 +176,8 @@ static void link_list(void)
     for (int i = 0; i < nwins; i++) wrl(wins[i].w + W_next, i + 1 < nwins ? wins[i + 1].w : 0);
     wrl(LM_WindowList, nwins ? wins[0].w : 0);
 }
+
+void pal_window_front(uint32_t win);
 
 static void show(uint32_t w)
 {
@@ -275,6 +294,7 @@ static void bring_front(uint32_t w)
     memmove(&wins[1], &wins[0], sizeof(WinInfo) * i);
     wins[0] = t;
     link_list();
+    pal_window_front(w);
 }
 static void T_SelectWindow(uint16_t op) { (void)op; uint32_t w = ARG32(); bring_front(w); wrb(w + W_hilited, 1); }
 static void T_BringToFront(uint16_t op) { (void)op; bring_front(ARG32()); }

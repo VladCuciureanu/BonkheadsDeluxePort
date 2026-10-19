@@ -19,7 +19,7 @@ typedef struct {
     stbtt_fontinfo info;
 } Face;
 
-enum { FONT_SANS = 0, FONT_SANS_BOLD, FONT_MONO, FONT_SERIF, FONT_GAME, NFACES };
+enum { FONT_SANS = 0, FONT_SANS_BOLD, FONT_MONO, FONT_SERIF, FONT_GAME, FONT_SYMBOL, NFACES };
 static Face faces[NFACES];
 static int16_t game_font_id = -1;
 static char game_font_name[64];
@@ -47,6 +47,10 @@ static const char *host_candidates[NFACES][20] = {
       "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/noto/NotoSerif-Regular.ttf",
       "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", "/usr/share/fonts/TTF/DejaVuSerif.ttf", "C:/Windows/Fonts/times.ttf", NULL },
     { NULL },
+    /* symbols missing from UI fonts (e.g. the Command key) */
+    { "C:/Windows/Fonts/seguisym.ttf", "/System/Library/Fonts/Apple Symbols.ttf",
+      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
+      "/usr/share/fonts/dejavu/DejaVuSans.ttf", NULL },
 };
 
 static uint8_t *read_file(const char *path, size_t *len)
@@ -144,7 +148,27 @@ static const uint16_t macroman[128] = {
     0x2021,0xB7,0x201A,0x201E,0x2030,0xC2,0xCA,0xC1,0xCB,0xC8,0xCD,0xCE,0xCF,0xCC,0xD3,0xD4,
     0xF8FF,0xD2,0xDA,0xDB,0xD9,0x131,0x2C6,0x2DC,0xAF,0x2D8,0x2D9,0x2DA,0xB8,0x2DD,0x2DB,0x2C7,
 };
-static int uni(uint8_t c) { return c < 128 ? c : macroman[c - 128]; }
+static int uni(uint8_t c)
+{
+    switch (c) {   /* Chicago puts these symbols in the control range */
+    case 0x11: return 0x2318;  /* Command key */
+    case 0x12: return 0x2713;  /* check mark */
+    case 0x13: return 0x25C6;  /* diamond */
+    case 0x14: return 0xF8FF;  /* Apple logo */
+    default: return c < 128 ? c : macroman[c - 128];
+    }
+}
+
+/* use a symbol font when the face lacks the character */
+static Face *face_get(int which);
+static Face *glyph_face(Face *f, int cp, int *gi)
+{
+    *gi = stbtt_FindGlyphIndex(&f->info, cp);
+    if (*gi || cp < 0x2000) return f;
+    Face *sym = face_get(FONT_SYMBOL);
+    if (sym && sym != f) { int g2 = stbtt_FindGlyphIndex(&sym->info, cp); if (g2) { *gi = g2; return sym; } }
+    return f;
+}
 
 typedef struct { Face *face; int size; uint8_t ch; bool used; int w, h, xoff, yoff, adv; uint8_t *bits; } Glyph;
 #define GCACHE 2048
@@ -158,12 +182,13 @@ static Glyph *glyph(Face *f, int size, uint8_t ch)
     free(g->bits);
     memset(g, 0, sizeof *g);
     g->used = true; g->face = f; g->size = size; g->ch = ch;
-    float sc = stbtt_ScaleForMappingEmToPixels(&f->info, (float)size);
+    int gi;
+    Face *gf = glyph_face(f, uni(ch), &gi);
+    float sc = stbtt_ScaleForMappingEmToPixels(&gf->info, (float)size);
     int adv, lsb;
-    int gi = stbtt_FindGlyphIndex(&f->info, uni(ch));
-    stbtt_GetGlyphHMetrics(&f->info, gi, &adv, &lsb);
+    stbtt_GetGlyphHMetrics(&gf->info, gi, &adv, &lsb);
     g->adv = (int)(adv * sc + 0.5f);
-    g->bits = stbtt_GetGlyphBitmap(&f->info, sc, sc, gi, &g->w, &g->h, &g->xoff, &g->yoff);
+    g->bits = stbtt_GetGlyphBitmap(&gf->info, sc, sc, gi, &g->w, &g->h, &g->xoff, &g->yoff);
     return g;
 }
 
@@ -247,6 +272,25 @@ void hitext_damage_screen(QRect r)
     }
 }
 
+/* drawing into a window covered by others only damages what it can reach:
+ * text lying entirely inside a covering window survives */
+void hitext_damage_port(QRect r, uint32_t port)
+{
+    if (rect_empty(r)) return;
+    QRect oc[32];
+    int n = port ? win_occluders(port, oc, 32) : 0;
+    for (int i = 0; i < MAXHT; i++) {
+        HiText *e = &ht[i];
+        if (!e->used || e->overlay || rect_empty(rect_sect(e->box, r))) continue;
+        bool covered = false;
+        for (int k = 0; k < n && !covered; k++) {
+            QRect in = rect_sect(e->box, oc[k]);
+            covered = !memcmp(&in, &e->box, sizeof in);
+        }
+        if (!covered) ht_free(e);
+    }
+}
+
 static HiText *ht_alloc(void)
 {
     for (int i = 0; i < MAXHT; i++) if (!ht[i].used) return &ht[i];
@@ -282,6 +326,15 @@ static bool ht_layout(HiText *e, Face *f, int size, bool bold, bool underline, c
     return true;
 }
 
+static uint32_t hitext_cur_port;
+static bool hitext_port_covered(QRect box)
+{
+    QRect oc[32];
+    int n = win_occluders(hitext_cur_port, oc, 32);
+    for (int i = 0; i < n; i++) if (!rect_empty(rect_sect(oc[i], box))) return true;
+    return false;
+}
+
 static void hitext_add(Face *f, int size, bool bold, bool underline, uint8_t color, const uint8_t *s, int len,
                        int x, int y, int spextra, QRect clip)
 {
@@ -290,6 +343,7 @@ static void hitext_add(Face *f, int size, bool bold, bool underline, uint8_t col
     QRect scr = { 0, 0, SCREEN_H, SCREEN_W };
     tmp.box = rect_sect(rect_sect(tmp.gbox, clip), scr);
     if (rect_empty(tmp.box)) return;
+    if (hitext_port_covered(tmp.box)) return;
     /* the same string redrawn at the same place replaces the old entry */
     for (int i = 0; i < MAXHT; i++) {
         HiText *e = &ht[i];
@@ -301,6 +355,38 @@ static void hitext_add(Face *f, int size, bool bold, bool underline, uint8_t col
     e->used = true;
     e->color_idx = color;
     e->hash = fb_hash(e->box);
+}
+
+/* Saving the pixels under a window/popup must also save the screen text there
+ * (it isn't in the pixels); restoring puts both back. */
+typedef struct HiTextSnap { int n; HiText e[]; } HiTextSnap;
+
+HiTextSnap *hitext_save(QRect r)
+{
+    int n = 0;
+    for (int i = 0; i < MAXHT; i++)
+        if (ht[i].used && !ht[i].overlay && !rect_empty(rect_sect(ht[i].box, r))) n++;
+    HiTextSnap *s = (HiTextSnap *)malloc(sizeof(HiTextSnap) + sizeof(HiText) * (n ? n : 1));
+    s->n = 0;
+    for (int i = 0; i < MAXHT; i++)
+        if (ht[i].used && !ht[i].overlay && !rect_empty(rect_sect(ht[i].box, r))) {
+            s->e[s->n] = ht[i];
+            s->e[s->n].handle = 0;  /* re-rasterised on restore */
+            s->n++;
+        }
+    return s;
+}
+
+void hitext_restore(HiTextSnap *s)
+{
+    if (!s) return;
+    for (int i = 0; i < s->n; i++) {
+        HiText *e = ht_alloc();
+        if (!e) break;
+        *e = s->e[i];
+        e->hash = fb_hash(e->box);   /* pixels underneath were just restored */
+    }
+    free(s);
 }
 
 /* overlay (port UI) text, independent of the game's pixels */
@@ -342,20 +428,21 @@ static void ht_rasterize(HiText *e, float S)
     int bw = (int)((g.right - g.left + 3) * S + 1), bh = (int)((g.bottom - g.top + 3) * S + 1);
     if (bw <= 0 || bh <= 0 || bw > 4096 || bh > 1024) return;
     uint8_t *a = (uint8_t *)calloc((size_t)bw * bh, 1);
-    float sc = stbtt_ScaleForMappingEmToPixels(&e->face->info, e->size * S);
     float base = (e->base_y - oy) * S;
     int passes = e->synth_bold ? 2 : 1;
     for (int i = 0; i < e->n; i++) {
-        int gi = stbtt_FindGlyphIndex(&e->face->info, uni(e->ch[i]));
+        int gi;
+        Face *gf = glyph_face(e->face, uni(e->ch[i]), &gi);
+        float sc = stbtt_ScaleForMappingEmToPixels(&gf->info, e->size * S);
         for (int pass = 0; pass < passes; pass++) {
             float px = (e->gx[i] - ox + pass) * S;
             float shift = px - (float)(int)px;
             int x0, y0, x1, y1;
-            stbtt_GetGlyphBitmapBoxSubpixel(&e->face->info, gi, sc, sc, shift, 0, &x0, &y0, &x1, &y1);
+            stbtt_GetGlyphBitmapBoxSubpixel(&gf->info, gi, sc, sc, shift, 0, &x0, &y0, &x1, &y1);
             int w = x1 - x0, h = y1 - y0;
             if (w <= 0 || h <= 0) continue;
             uint8_t *tmp = (uint8_t *)malloc((size_t)w * h);
-            stbtt_MakeGlyphBitmapSubpixel(&e->face->info, tmp, w, h, w, sc, sc, shift, 0, gi);
+            stbtt_MakeGlyphBitmapSubpixel(&gf->info, tmp, w, h, w, sc, sc, shift, 0, gi);
             int dx = (int)px + x0, dy = (int)(base + 0.5f) + y0;
             for (int yy = 0; yy < h; yy++) {
                 int ty = dy + yy;
@@ -442,6 +529,7 @@ static void draw_glyphs(uint32_t port, int x, int y, const uint8_t *s, int len)
         /* screen text goes to the hi-res layer (coordinates relative to the screen) */
         QRect sclip = { (int16_t)(clip.top - pd.bounds.top), (int16_t)(clip.left - pd.bounds.left),
                         (int16_t)(clip.bottom - pd.bounds.top), (int16_t)(clip.right - pd.bounds.left) };
+        hitext_cur_port = port;
         hitext_add(f, size, synth_bold, underline, fg, s, len, x - pd.bounds.left, y - pd.bounds.top, spextra, sclip);
         return;
     }
@@ -587,6 +675,7 @@ static void T_TETextBox(uint16_t op)
     int y = b.top + a;
     int i = 0;
     int width = b.right - b.left;
+    if (width <= 0) return;
     while (i < len && y - a < b.bottom) {
         /* find line end: CR or wrap at last space that fits */
         int start = i, last_space = -1, j = i;
@@ -597,6 +686,8 @@ static void T_TETextBox(uint16_t op)
         }
         int end = j;
         if (j < len && s[j] != 13 && last_space > start) end = last_space;
+        /* always make progress, even if not a single character fits */
+        if (end == start && j < len && s[j] != 13) end = start + 1;
         int w = text_width(port, s + start, end - start);
         int x = b.left;
         if (just == 1) x = b.left + (width - w) / 2;

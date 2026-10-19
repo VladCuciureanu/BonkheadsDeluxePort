@@ -122,21 +122,117 @@ static void T_RestoreEntries(uint16_t op)
 }
 
 /* ------------------------------------------------------------ Palette Manager */
+/* Palette record: 16-byte header (pmEntries first), then 16 bytes per entry
+ * with the RGB colour at the start, as on the Mac. */
+#define PAL_HDR 16
+#define PAL_ENT 16
+
+static uint32_t new_palette(int n, uint32_t ctab)
+{
+    if (n < 1) n = 1;
+    if (n > 256) n = 256;
+    uint32_t h = mm_new_handle(PAL_HDR + (uint32_t)n * PAL_ENT, true);
+    uint32_t p = rdl(h);
+    wrw(p, (uint16_t)n);
+    if (ctab && rdl(ctab)) {
+        uint32_t c = rdl(ctab);
+        int cn = (int16_t)rdw(c + 6) + 1;
+        bool dev = (rdw(c + 4) & 0x8000) != 0;
+        for (int k = 0; k < cn; k++) {
+            uint32_t e = c + 8 + k * 8;
+            int idx = dev ? k : (rdw(e) & 0xFF);
+            if (idx >= n) continue;
+            memcpy(HP(p + PAL_HDR + idx * PAL_ENT), HP(e + 2), 6);
+        }
+    }
+    return h;
+}
+
+/* which palette belongs to which window */
+typedef struct { uint32_t win, pal; } WinPal;
+static WinPal winpals[32];
+static uint32_t app_palette;
+
+static void set_win_palette(uint32_t win, uint32_t pal)
+{
+    for (int i = 0; i < 32; i++) if (winpals[i].win == win) { winpals[i].pal = pal; return; }
+    for (int i = 0; i < 32; i++) if (!winpals[i].win) { winpals[i].win = win; winpals[i].pal = pal; return; }
+}
+
+static uint32_t win_palette(uint32_t win)
+{
+    for (int i = 0; i < 32; i++) if (winpals[i].win == win && mm_is_handle(winpals[i].pal)) return winpals[i].pal;
+    return 0;
+}
+
+/* Activate a palette: load its colours into the device (and the screen,
+ * unless the game has the screen faded to black, where its fade-in will
+ * reveal the new colours). */
+static void apply_palette(uint32_t pal)
+{
+    if (!pal || !mm_is_handle(pal) || !rdl(pal)) return;
+    uint32_t p = rdl(pal);
+    int n = (int16_t)rdw(p);
+    uint32_t dct = qd_device_ctab();
+    uint32_t dp = rdl(dct);
+    bool faded = true;
+    for (int i = 0; i < 256 && faded; i++) if (g_hw_pal[i][0] | g_hw_pal[i][1] | g_hw_pal[i][2]) faded = false;
+    for (int i = 0; i < n && i < 256; i++) {
+        uint32_t e = p + PAL_HDR + i * PAL_ENT;
+        uint32_t de = dp + 8 + i * 8;
+        memcpy(HP(de + 2), HP(e), 6);
+        if (!faded) {
+            g_hw_pal[i][0] = (uint8_t)(rdw(e) >> 8); g_hw_pal[i][1] = (uint8_t)(rdw(e + 2) >> 8); g_hw_pal[i][2] = (uint8_t)(rdw(e + 4) >> 8);
+        }
+    }
+    bump_seed(dct);
+    g_hw_pal_dirty = true;
+}
+
+void pal_window_front(uint32_t win)
+{
+    uint32_t pal = win_palette(win);
+    if (pal) apply_palette(pal);
+}
+
 static void T_InitPalettes(uint16_t op) { (void)op; }
 static void T_NewPalette(uint16_t op)
 {
     (void)op;
     (void)ARG16(); (void)ARG16(); uint32_t ct = ARG32(); int16_t n = ARGS16();
-    uint32_t h = mm_new_handle(16 + (uint32_t)(n > 0 ? n : 1) * 16, true);
-    wrw(rdl(h), (uint16_t)n);
-    (void)ct;
-    RET32(h);
+    RET32(new_palette(n, ct));
 }
-static void T_GetNewPalette(uint16_t op) { (void)op; (void)ARG16(); RET32(mm_new_handle(16, true)); }
-static void T_DisposePalette(uint16_t op) { (void)op; uint32_t h = ARG32(); if (h && mm_is_handle(h)) mm_dispose_handle(h); }
-static void T_SetPalette(uint16_t op) { (void)op; (void)ARG8(); (void)ARG32(); (void)ARG32(); }
-static void T_ActivatePalette(uint16_t op) { (void)op; (void)ARG32(); }
-static void T_GetPalette(uint16_t op) { (void)op; (void)ARG32(); RET32(0); }
+static void T_GetNewPalette(uint16_t op)
+{
+    (void)op;
+    int16_t id = ARGS16();
+    uint32_t len; const uint8_t *r = res_peek(OSTYPE('p','l','t','t'), id, &len);
+    if (r && len >= PAL_HDR) { RET32(mm_handle_from_bytes(r, len)); return; }
+    RET32(new_palette(256, 0));
+}
+static void T_DisposePalette(uint16_t op)
+{
+    (void)op;
+    uint32_t h = ARG32();
+    for (int i = 0; i < 32; i++) if (winpals[i].pal == h) winpals[i].win = winpals[i].pal = 0;
+    if (h && mm_is_handle(h)) mm_dispose_handle(h);
+}
+uint32_t win_front(void);
+static void T_SetPalette(uint16_t op)
+{
+    (void)op;
+    (void)ARG8(); uint32_t pal = ARG32(); uint32_t win = ARG32();
+    if (win == 0 || win == 0xFFFFFFFFu) { app_palette = pal; return; }
+    set_win_palette(win, pal);
+    if (win == win_front()) apply_palette(pal);
+}
+static void T_ActivatePalette(uint16_t op)
+{
+    (void)op;
+    uint32_t win = ARG32();
+    if (win == win_front()) apply_palette(win_palette(win));
+}
+static void T_GetPalette(uint16_t op) { (void)op; uint32_t win = ARG32(); uint32_t p = win_palette(win); RET32(p ? p : app_palette); }
 static void T_PaletteDispatch(uint16_t op)
 {
     (void)op;

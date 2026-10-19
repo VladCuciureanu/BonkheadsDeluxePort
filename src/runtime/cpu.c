@@ -8,6 +8,8 @@
 uint32_t D[8], A[8];
 uint8_t fN, fZ, fV, fC, fX;
 uint8_t *MEM;
+volatile uint32_t g_cur_fn;
+volatile uint16_t g_cur_trap;
 
 static const RecompFunc *find_func(uint32_t addr)
 {

@@ -13,6 +13,9 @@
 extern uint32_t D[8], A[8];
 extern uint8_t fN, fZ, fV, fC, fX;
 extern uint8_t *MEM;
+/* diagnostics: original function currently executing, Toolbox trap in progress */
+extern volatile uint32_t g_cur_fn;
+extern volatile uint16_t g_cur_trap;
 
 #define MEM_SIZE (64u * 1024u * 1024u)
 #define MEM_MASK (MEM_SIZE - 1u)

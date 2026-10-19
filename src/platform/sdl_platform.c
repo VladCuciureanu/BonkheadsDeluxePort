@@ -10,6 +10,7 @@ static SDL_Texture *tex;
 static InputState in;
 static bool quit_req;
 static uint64_t t0;
+static bool headless;         /* hidden window, real input ignored (automated tests) */
 static SDL_FRect view;          /* where the 640x480 image lands, in output pixels */
 static float view_scale = 1;
 static char capture_path[512];  /* save the next presented frame here */
@@ -68,6 +69,8 @@ static void push_ev(PlatEvent e)
     evt = n;
 }
 
+void plat_set_headless(bool on) { headless = on; }
+
 bool plat_init(int scale, bool fullscreen)
 {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS)) {
@@ -77,7 +80,8 @@ bool plat_init(int scale, bool fullscreen)
     build_keymap();
     if (scale < 1) scale = 2;
     win = SDL_CreateWindow("Bonkheads Deluxe", SCREEN_W * scale, SCREEN_H * scale,
-                           SDL_WINDOW_RESIZABLE | (fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
+                           SDL_WINDOW_RESIZABLE | (fullscreen && !headless ? SDL_WINDOW_FULLSCREEN : 0) |
+                           (headless ? SDL_WINDOW_HIDDEN : 0));
     if (!win) { log_warn("SDL_CreateWindow: %s", SDL_GetError()); return false; }
     ren = SDL_CreateRenderer(win, NULL);
     if (!ren) { log_warn("SDL_CreateRenderer: %s", SDL_GetError()); return false; }
@@ -98,7 +102,7 @@ void plat_shutdown(void)
 
 static uint16_t mac_modifiers(void)
 {
-    SDL_Keymod m = SDL_GetModState();
+    SDL_Keymod m = headless ? SDL_KMOD_NONE : SDL_GetModState();
     uint16_t r = 0;
     if (m & SDL_KMOD_GUI) r |= 0x0100;
     if (m & SDL_KMOD_SHIFT) r |= 0x0200;
@@ -236,6 +240,7 @@ void plat_pump(void)
             break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP: {
+            if (headless) break;
             bool down = e.type == SDL_EVENT_KEY_DOWN;
             if (down && e.key.key == SDLK_RETURN && (e.key.mod & SDL_KMOD_ALT)) {
                 bool fs = (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) != 0;
@@ -255,10 +260,12 @@ void plat_pump(void)
             break;
         }
         case SDL_EVENT_MOUSE_MOTION:
+            if (headless) break;
             if (!nscript) map_mouse(e.motion.x, e.motion.y);
             break;
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP: {
+            if (headless) break;
             map_mouse(e.button.x, e.button.y);
             if (e.button.button != SDL_BUTTON_LEFT) break;
             in.button = e.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
@@ -273,7 +280,7 @@ void plat_pump(void)
             break;
         }
     }
-    in.caps_lock = (SDL_GetModState() & SDL_KMOD_CAPS) != 0;
+    in.caps_lock = !headless && (SDL_GetModState() & SDL_KMOD_CAPS) != 0;
     set_key(0x39, in.caps_lock);
     in.modifiers = mac_modifiers();
 }
@@ -385,6 +392,7 @@ uint32_t plat_secs_since_1904(void)
 
 void plat_show_cursor(bool show)
 {
+    if (headless) return;
     if (show) SDL_ShowCursor(); else SDL_HideCursor();
 }
 

@@ -239,9 +239,11 @@ static void ui_text(int x, int y, const char *s, uint8_t fg)
     wrw(ui_port + P_pnLoc, (uint16_t)y); wrw(ui_port + P_pnLoc + 2, (uint16_t)x);
     text_draw(ui_port, (const uint8_t *)s, (int)strlen(s));
 }
+static HiTextSnap *ui_text_under;
 static uint8_t *ui_save(QRect r)
 {
     int w = r.right - r.left, h = r.bottom - r.top;
+    ui_text_under = hitext_save(r);
     uint8_t *b = (uint8_t *)malloc((size_t)w * h);
     for (int y = 0; y < h; y++) memcpy(b + (size_t)y * w, HP(g_screen_fb + (uint32_t)(r.top + y) * SCREEN_W + r.left), w);
     return b;
@@ -252,6 +254,7 @@ static void ui_restore(QRect r, uint8_t *b)
     int w = r.right - r.left, h = r.bottom - r.top;
     for (int y = 0; y < h; y++) memcpy(HP(g_screen_fb + (uint32_t)(r.top + y) * SCREEN_W + r.left), b + (size_t)y * w, w);
     free(b);
+    hitext_restore(ui_text_under); ui_text_under = NULL;
 }
 static uint8_t BLACK, WHITE, HILITE, GREY;
 static void ui_colors(void)
@@ -477,7 +480,12 @@ static void std_get_file(uint32_t types, int ntypes, uint32_t reply)
     bool ok = false, done = false;
     while (!done) {
         ui_fill(r, WHITE); ui_frame(r, BLACK);
-        ui_text(160, 124, n ? "Open which game?" : "No saved games found.", BLACK);
+        uint32_t t0 = ntypes > 0 ? rdl(types) : 0;
+        const char *what = t0 == OSTYPE('B','K','S','V') ? "saved game" : t0 == OSTYPE('L','V','L','S') ? "level set" : "file";
+        char title[64];
+        if (n) snprintf(title, sizeof title, "Choose a %s:", what);
+        else snprintf(title, sizeof title, "No %ss found.", what);
+        ui_text(160, 124, title, BLACK);
         QRect lr = { 134, 160, 334, 480 };
         ui_frame(lr, BLACK);
         for (int i = 0; i < 11 && top + i < n; i++) {

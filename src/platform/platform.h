@@ -18,6 +18,7 @@ typedef struct { uint16_t what; uint32_t message; int16_t h, v; uint16_t modifie
 enum { PEV_MOUSEDOWN = 1, PEV_MOUSEUP = 2, PEV_KEYDOWN = 3, PEV_KEYUP = 4, PEV_AUTOKEY = 5 };
 
 bool plat_init(int scale, bool fullscreen);
+void plat_set_headless(bool on);   /* before plat_init: hidden window, ignore real input */
 void plat_shutdown(void);
 void plat_pump(void);                                    /* process OS events */
 /* a hi-res text bitmap drawn over the game: (x,y) in 640x480 coordinates,

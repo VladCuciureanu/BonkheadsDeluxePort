@@ -388,12 +388,12 @@ class FuncGen:
         if k == 'call':
             if ins.callee is not None and ins.callee in self.p.entries:
                 self.calls.add(ins.callee)
-                o.append('PUSH32(0x%x); %s();' % (nxt, self.p.cname(ins.callee)))
+                o.append('PUSH32(0x%x); %s(); g_cur_fn = 0x%x;' % (nxt, self.p.cname(ins.callee), self.entry))
             elif ins.callee is not None:
-                o.append('PUSH32(0x%x); call_addr(0x%x);' % (nxt, ins.callee))
+                o.append('PUSH32(0x%x); call_addr(0x%x); g_cur_fn = 0x%x;' % (nxt, ins.callee, self.entry))
             else:
                 a = self.addr_expr(ins.infos[0], ins)
-                o.append('{ uint32_t t_ = %s; PUSH32(0x%x); call_addr(t_); }' % (a, nxt))
+                o.append('{ uint32_t t_ = %s; PUSH32(0x%x); call_addr(t_); g_cur_fn = 0x%x; }' % (a, nxt, self.entry))
             return o
         if k == 'tail':
             self.calls.add(ins.callee)
@@ -831,7 +831,8 @@ class FuncGen:
         name = self.p.names.get(self.entry, '')
         head = ['/* %s  (CODE %d "%s" +0x%x) */' % (name or '?', self.seg.sid, self.seg.name, self.entry - self.seg.base),
                 'void %s(void)' % self.p.cname(self.entry), '{',
-                '    uint32_t t, s, d, r, ea, ea2; (void)t; (void)s; (void)d; (void)r; (void)ea; (void)ea2;']
+                '    uint32_t t, s, d, r, ea, ea2; (void)t; (void)s; (void)d; (void)r; (void)ea; (void)ea2;',
+                '    g_cur_fn = 0x%x;' % self.entry]
         return head + body + ['}', '']
 
 

@@ -111,6 +111,7 @@ void qd_set_rgn(uint32_t rgn, QRect r);
 QRect qd_rgn_box(uint32_t rgn);
 uint32_t qd_new_ctab_from(const uint8_t *clut, uint32_t len);
 uint32_t qd_device_ctab(void);
+uint32_t qd_effective_ctab(uint32_t ctab);   /* equal seeds => the screen's table */
 void qd_mark_dirty(void);
 
 /* screen presentation */
@@ -129,6 +130,10 @@ void text_init(void);
 
 /* hi-res text layer (text.c) */
 void hitext_damage_screen(QRect r);   /* something painted this screen area */
+void hitext_damage_port(QRect r, uint32_t port);   /* ... through window `port` */
+typedef struct HiTextSnap HiTextSnap;
+HiTextSnap *hitext_save(QRect r);      /* text under a window/popup, with its pixels */
+void hitext_restore(HiTextSnap *s);    /* call after restoring those pixels; frees s */
 int text_hires_draws(PlatTextDraw *out, int max);
 void text_overlay_set(int slot, const char *s, int x, int baseline, bool bold, uint8_t r, uint8_t g, uint8_t b);
 void text_overlay_clear(void);
@@ -136,6 +141,11 @@ int text_overlay_width(const char *s, bool bold);
 extern bool g_text_hires;
 
 /* windows (window.c) */
+int win_occluders(uint32_t w, QRect *out, int max);
+/* row mask for drawing into screen port `port`: 1 = visible. Returns NULL when
+ * nothing covers the port (the common case). Coordinates are screen pixels. */
+const uint8_t *qd_visible_row(uint32_t port, int y);
+bool qd_port_occluded(uint32_t port);
 uint32_t win_front(void);
 void win_save_under(uint32_t w);
 void win_restore_under(uint32_t w);

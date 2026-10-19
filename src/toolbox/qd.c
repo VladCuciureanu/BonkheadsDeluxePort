@@ -89,6 +89,17 @@ uint32_t qd_device_ctab(void)
     return rdl(rdl(pm) + PM_pmTable);
 }
 
+/* Colour QuickDraw treats colour tables with equal ctSeed as identical. The
+ * game stamps the screen's seed into its offscreen buffers' tables so colours
+ * drawn into them are matched against the screen palette (and the raw-index
+ * copy to the screen then shows the right colours). Honour that here. */
+uint32_t qd_effective_ctab(uint32_t ctab)
+{
+    uint32_t dev = qd_device_ctab();
+    if (ctab && ctab != dev && rdl(ctab) && rdl(dev) && rdl(rdl(ctab)) == rdl(rdl(dev))) return dev;
+    return ctab;
+}
+
 /* nearest-colour cache keyed by ctab contents seed */
 static uint32_t cache_ctab, cache_seed;
 static uint8_t cache_lut[32768];
@@ -237,7 +248,7 @@ static void classic_rgb(uint32_t c, uint16_t *r, uint16_t *g, uint16_t *b)
 static uint8_t port_index_for(uint32_t port, uint32_t rgbaddr)
 {
     PixDesc pd;
-    uint32_t ctab = qd_port_pixels(port, &pd) ? pd.ctab : 0;
+    uint32_t ctab = qd_port_pixels(port, &pd) ? qd_effective_ctab(pd.ctab) : 0;
     return qd_rgb_to_index(ctab, (uint16_t)rdw(rgbaddr), (uint16_t)rdw(rgbaddr + 2), (uint16_t)rdw(rgbaddr + 4));
 }
 
@@ -299,6 +310,44 @@ void qd_init_port(uint32_t port, bool color)
     memset(pp->pen, 0xFF, 8); memset(pp->bk, 0, 8); memset(pp->fill, 0xFF, 8);
 }
 
+/* ------------------------------------------------------------ window occlusion */
+static uint32_t occ_port;
+static QRect occ_rects[32];
+static int occ_n;
+static uint8_t occ_mask[SCREEN_W];
+static int occ_mask_y = -1;
+
+static void occ_prepare(uint32_t port)
+{
+    if (port != occ_port) { occ_port = port; occ_mask_y = -1; }
+    occ_n = win_occluders(port, occ_rects, 32);
+}
+
+bool qd_port_occluded(uint32_t port) { occ_prepare(port); return occ_n > 0; }
+
+const uint8_t *qd_visible_row(uint32_t port, int y)
+{
+    if (port != occ_port) occ_prepare(port);
+    if (!occ_n) return NULL;
+    if (y == occ_mask_y) return occ_mask;
+    memset(occ_mask, 1, sizeof occ_mask);
+    for (int i = 0; i < occ_n; i++) {
+        QRect r = occ_rects[i];
+        if (y < r.top || y >= r.bottom) continue;
+        int l = r.left < 0 ? 0 : r.left, rr = r.right > SCREEN_W ? SCREEN_W : r.right;
+        if (rr > l) memset(occ_mask + l, 0, (size_t)(rr - l));
+    }
+    occ_mask_y = y;
+    return occ_mask;
+}
+
+/* the window whose portBits field is at `bm`, if any */
+static uint32_t port_of_bitmap(uint32_t bm)
+{
+    uint32_t p = bm - P_portBits;
+    return win_occluders(p, occ_rects, 0) >= 0 ? p : 0;
+}
+
 /* ------------------------------------------------------------ drawing core */
 void qd_mark_dirty(void) { }
 
@@ -312,13 +361,16 @@ void qd_fill_rect(uint32_t port, QRect r, const uint8_t pat[8], int mode, uint8_
     if (pd.base == g_screen_fb) {
         QRect sr = { (int16_t)(r.top - pd.bounds.top), (int16_t)(r.left - pd.bounds.left),
                      (int16_t)(r.bottom - pd.bounds.top), (int16_t)(r.right - pd.bounds.left) };
-        hitext_damage_screen(sr);
+        hitext_damage_port(sr, port);
     }
     mode &= 0x3F;
+    bool occl = pd.base == g_screen_fb && qd_port_occluded(port);
     for (int y = r.top; y < r.bottom; y++) {
         uint8_t prow = pat[y & 7];
         uint8_t *row = HP(pd.base + (uint32_t)(y - pd.bounds.top) * pd.rowbytes);
+        const uint8_t *vis = occl ? qd_visible_row(port, y - pd.bounds.top) : NULL;
         for (int x = r.left; x < r.right; x++) {
+            if (vis && !vis[x - pd.bounds.left]) continue;
             uint8_t *px = row + (x - pd.bounds.left);
             bool bit = (prow >> (7 - (x & 7))) & 1;
             switch (mode) {
@@ -396,6 +448,27 @@ static void draw_line_to(int16_t h, int16_t v)
 }
 
 /* ------------------------------------------------------------ CopyBits */
+/* CopyBits between 8-bit pixmaps whose colour tables differ (different seeds)
+ * translates colours, as Color QuickDraw does; equal seeds copy indices raw. */
+static const uint8_t *copy_translation(uint32_t sct, uint32_t dct)
+{
+    static uint8_t lut[256];
+    static uint32_t lut_s, lut_d, lut_sseed, lut_dseed;
+    sct = qd_effective_ctab(sct); dct = qd_effective_ctab(dct);
+    if (!sct || !dct || !rdl(sct) || !rdl(dct) || sct == dct) return NULL;
+    uint32_t ss = rdl(rdl(sct)), ds = rdl(rdl(dct));
+    if (ss == ds) return NULL;
+    if (sct != lut_s || dct != lut_d || ss != lut_sseed || ds != lut_dseed) {
+        for (int i = 0; i < 256; i++) {
+            uint16_t r, g, b;
+            qd_index_to_rgb(sct, (uint8_t)i, &r, &g, &b);
+            lut[i] = qd_rgb_to_index(dct, r, g, b);
+        }
+        lut_s = sct; lut_d = dct; lut_sseed = ss; lut_dseed = ds;
+    }
+    return lut;
+}
+
 static void copy_bits(uint32_t srcbm, uint32_t dstbm, QRect sr, QRect dr, int mode, uint32_t mask)
 {
     PixDesc s, d;
@@ -410,19 +483,23 @@ static void copy_bits(uint32_t srcbm, uint32_t dstbm, QRect sr, QRect dr, int mo
     if (d.base == g_screen_fb) {
         QRect sdc = { (int16_t)(dc.top - d.bounds.top), (int16_t)(dc.left - d.bounds.left),
                       (int16_t)(dc.bottom - d.bounds.top), (int16_t)(dc.right - d.bounds.left) };
-        hitext_damage_screen(sdc);
+        hitext_damage_port(sdc, dstbm - P_portBits);
     }
     int sw = sr.right - sr.left, sh = sr.bottom - sr.top, dw = dr.right - dr.left, dh = dr.bottom - dr.top;
     bool same = sw == dw && sh == dh;
     uint8_t bkidx = port ? qd_bk_index(port) : 0;
     mode &= 0x7F;
+    uint32_t dport = d.base == g_screen_fb ? port_of_bitmap(dstbm) : 0;
+    bool occl = dport && qd_port_occluded(dport);
     if (s.depth == 8 && d.depth == 8) {
+        const uint8_t *xl = copy_translation(s.ctab, d.ctab);
         for (int y = dc.top; y < dc.bottom; y++) {
             int sy = same ? sr.top + (y - dr.top) : sr.top + (int)((long)(y - dr.top) * sh / dh);
             if (sy < s.bounds.top || sy >= s.bounds.bottom) continue;
             uint8_t *srow = HP(s.base + (uint32_t)(sy - s.bounds.top) * s.rowbytes);
             uint8_t *drow = HP(d.base + (uint32_t)(y - d.bounds.top) * d.rowbytes);
-            if (same && mode == 0) {
+            const uint8_t *vis = occl ? qd_visible_row(dport, y - d.bounds.top) : NULL;
+            if (same && mode == 0 && !xl && !vis) {
                 int x0 = dc.left, x1 = dc.right;
                 int sx0 = sr.left + (x0 - dr.left);
                 if (sx0 < s.bounds.left) { x0 += s.bounds.left - sx0; sx0 = s.bounds.left; }
@@ -433,14 +510,16 @@ static void copy_bits(uint32_t srcbm, uint32_t dstbm, QRect sr, QRect dr, int mo
             for (int x = dc.left; x < dc.right; x++) {
                 int sx = same ? sr.left + (x - dr.left) : sr.left + (int)((long)(x - dr.left) * sw / dw);
                 if (sx < s.bounds.left || sx >= s.bounds.right) continue;
+                if (vis && !vis[x - d.bounds.left]) continue;
                 uint8_t v = srow[sx - s.bounds.left];
+                uint8_t t = xl ? xl[v] : v;
                 uint8_t *px = drow + (x - d.bounds.left);
                 switch (mode) {
-                case 1: if (v != 0) *px = v; break;          /* srcOr: white is transparent */
-                case 2: *px ^= v; break;                      /* srcXor */
+                case 1: if (v != 0) *px = t; break;          /* srcOr: white is transparent */
+                case 2: *px ^= t; break;                      /* srcXor */
                 case 3: if (v != 0) *px = 0; break;           /* srcBic */
-                case 36: if (v != bkidx) *px = v; break;      /* transparent */
-                default: *px = v; break;
+                case 36: if (t != bkidx) *px = t; break;      /* transparent */
+                default: *px = t; break;
                 }
             }
         }

@@ -28,6 +28,32 @@ static void usage(void)
            "  --trace             verbose trap tracing\n");
 }
 
+/* hang diagnostics: report where the game is stuck if it stops reaching the
+ * event loop for a few seconds */
+void stackdump_init(void);
+void stackdump_main_thread(void);
+
+static int SDLCALL watchdog(void *arg)
+{
+    (void)arg;
+    extern volatile uint64_t g_last_idle_us;
+    extern const char *trap_name(uint16_t op);
+    uint64_t reported = 0;
+    for (;;) {
+        SDL_Delay(1000);
+        uint64_t last = g_last_idle_us, now = plat_micros();
+        if (last && now - last > 3000000 && last != reported) {
+            reported = last;
+            uint32_t fn = g_cur_fn; uint16_t trap = g_cur_trap;
+            const char *name = func_name_for(fn);
+            log_warn("watchdog: no event-loop activity for %.1fs; in %s (0x%08X), trap %s ($%04X)",
+                     (now - last) / 1e6, name ? name : "?", fn, trap ? trap_name(trap) : "none", trap);
+            stackdump_main_thread();
+        }
+    }
+    return 0;
+}
+
 void app_quit(void)
 {
     sound_update();
@@ -49,6 +75,7 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(a, "--fullscreen")) fullscreen = true;
         else if (!strcmp(a, "--nosound")) nosound = true;
+        else if (!strcmp(a, "--headless")) { plat_set_headless(true); g_headless = 1; }
         else if (!strcmp(a, "--port") && i + 1 < argc) g_netcfg.port = (uint16_t)atoi(argv[++i]);
         else if (!strcmp(a, "--hold") && i + 1 < argc) g_netcfg.hold_ticks = atoi(argv[++i]);
         else if (!strcmp(a, "--no-redundancy")) g_netcfg.redundancy = false;
@@ -96,6 +123,8 @@ int main(int argc, char **argv)
     sound_init(!nosound);
     net_init();
     log_info("game data: %s", g_game_dir);
+    stackdump_init();
+    SDL_DetachThread(SDL_CreateThread(watchdog, "watchdog", NULL));
     cpu_run_main();
     app_quit();
     return 0;

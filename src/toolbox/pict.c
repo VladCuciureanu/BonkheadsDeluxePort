@@ -81,13 +81,15 @@ static void blit_indices(Pic *pc, const uint8_t *img, QRect bounds, QRect sr, QR
     if (d.base == g_screen_fb) {
         QRect sdc = { (int16_t)(dc.top - d.bounds.top), (int16_t)(dc.left - d.bounds.left),
                       (int16_t)(dc.bottom - d.bounds.top), (int16_t)(dc.right - d.bounds.left) };
-        hitext_damage_screen(sdc);
+        hitext_damage_port(sdc, pc->port);
     }
     int bw = bounds.right - bounds.left;
     int sw = sr.right - sr.left, sh = sr.bottom - sr.top, dw = dr.right - dr.left, dh = dr.bottom - dr.top;
     if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) return;
     uint8_t bk = qd_bk_index(pc->port);
+    bool occl = d.base == g_screen_fb && qd_port_occluded(pc->port);
     for (int y = dc.top; y < dc.bottom; y++) {
+        const uint8_t *vis = occl ? qd_visible_row(pc->port, y - d.bounds.top) : NULL;
         int sy = sr.top + (int)((long)(y - dr.top) * sh / dh);
         if (sy < bounds.top || sy >= bounds.bottom) continue;
         const uint8_t *srow = img + (size_t)(sy - bounds.top) * bw;
@@ -95,6 +97,7 @@ static void blit_indices(Pic *pc, const uint8_t *img, QRect bounds, QRect sr, QR
         for (int x = dc.left; x < dc.right; x++) {
             int sx = sr.left + (int)((long)(x - dr.left) * sw / dw);
             if (sx < bounds.left || sx >= bounds.right) continue;
+            if (vis && !vis[x - d.bounds.left]) continue;
             uint8_t v = srow[sx - bounds.left];
             if (mode == 36 && v == bk) continue;
             if (mode == 1 && v == 0) continue;
@@ -240,6 +243,7 @@ void pict_draw(uint32_t port, uint32_t h, QRect dst)
     PixDesc pd;
     pc.dctab = qd_port_pixels(port, &pd) ? pd.ctab : 0;
     if (!pc.dctab) pc.dctab = qd_device_ctab();
+    pc.dctab = qd_effective_ctab(pc.dctab);
     g16(&pc);
     pc.frame = grect(&pc);
     pc.dst = dst;

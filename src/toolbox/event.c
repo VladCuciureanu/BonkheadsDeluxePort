@@ -27,8 +27,11 @@ void screen_present(bool force)
 double g_shot_after = -1;
 char g_shot_path[512];
 
+volatile uint64_t g_last_idle_us;
+
 void evt_idle(void)
 {
+    g_last_idle_us = plat_micros();
     plat_pump();
     if (g_shot_after >= 0 && plat_micros() / 1e6 >= g_shot_after) {
         plat_request_capture(g_shot_path);
