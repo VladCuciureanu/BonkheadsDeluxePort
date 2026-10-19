@@ -1,8 +1,26 @@
 # HLE notes: how the game uses the Mac Toolbox
 
-These notes summarise findings from static analysis of the 68k code. Each
-note gives offsets as seg:offset and globals as A5-relative offsets. They
-record exactly what the Toolbox reimplementation must do.
+These notes summarise what static analysis of the 68k code, and getting
+the game to run, showed about the Toolbox. They record what the
+reimplementation in `src/toolbox` must do, including the places where the
+game depends on subtle behaviour of the real Mac. Code locations are given as
+seg:offset, and globals as offsets from A5.
+
+The recompiled game sees a flat, big-endian 64 MB memory. The layout is
+shared by `tools/recomp.py` and `src/runtime/layout.h`:
+
+| Region | Address |
+|---|---|
+| CODE segments | from $10000 |
+| A5 world (application globals below A5, jump table above) | A5 = $88000 |
+| Stack (grows down) | top at $200000 |
+| Handle heap | from $200000 |
+
+Toolbox traps (`$Axxx` words) are dispatched to C functions in `trap.c`. They
+use the Pascal calling convention: arguments are pushed left to right, and
+the callee pops them and leaves the result on the stack. OS traps take their
+arguments in registers and set the condition codes from D0, which the game
+tests.
 
 ## Trap name corrections
 
@@ -66,8 +84,24 @@ Gestalt is used only through the seg7 glue. That glue relies on
   | $40017 | GetGWorldPixMap |
 
   Set rowBytes to 640 with the $8000 flag set. Pixels never move.
-- **CopyBits.** Always srcCopy with a nil mask. Copy indices raw, with no
-  color mapping. Clip to the destination bounds and the port clip.
+- **CopyBits.** The game mostly uses srcCopy with a nil mask (srcOr, srcXor
+  and srcBic are supported as well). Clip to the destination bounds, the port clip and
+  the mask region. Between 8-bit pixmaps, copy indices raw when the two
+  color tables are the same table or have the same `ctSeed`. Otherwise
+  translate each index through RGB to the nearest destination color, as
+  Color QuickDraw does. The Help screens rely on this translation.
+- **The ctSeed rule.** Color QuickDraw treats two color tables with equal
+  `ctSeed` as identical. The game stamps the screen's seed into its GWorld
+  tables, so drawing into those GWorlds must match colors against the
+  *screen's* table, not the GWorld's own copy (`qd_effective_ctab`).
+- **Colors in ports.** `RGBForeColor` and `RGBBackColor` pick the nearest
+  palette entry. `ForeColor` and `BackColor` take the classic 8 colors,
+  which map from their CMYK bits. The game also writes palette *indices*
+  straight into `fgColor`/`bkColor` of color ports, for example the
+  high-score colors. Honour these as indices.
+- **Window occlusion.** Drawing into a window must not touch the parts of
+  the screen covered by windows in front of it. The main menu keeps
+  redrawing its backdrop while dialogs are open.
 - **Sprt resource.** A Rect at +0. From +8, a stream of 32-bit opcode words
   (`op = w>>24`, `n = w & 0xFFFFFF`):
 
@@ -85,7 +119,12 @@ Gestalt is used only through the seg7 glue. That glue relies on
 - **Palettes.** Fades modify the device ctab and call SetEntries(0, 255,
   table) once per step. The hardware palette must be separate and change
   only through SetEntries. SetEntries waits about 1 tick, which paces the
-  fades. SetPalette/NewPalette have no visual effect.
+  fades.
+- **Palette Manager.** Some screens, such as Help, attach their own
+  palette with SetPalette/ActivatePalette. When the window is (or comes to
+  the) front, the palette's colors are loaded into the device table and,
+  unless the screen is faded to black, into the hardware palette. While the
+  screen is black, the game's next fade-in reveals the new colors.
 - **Fonts.**
 
   | Font | Where used |
@@ -96,6 +135,13 @@ Gestalt is used only through the seg7 glue. That glue relies on
   | System (0) | |
 
   Text calls used: DrawString, StringWidth, CharWidth and TETextBox (center).
+
+  The port renders text drawn to the screen a second time, at output
+  resolution, in the OS UI font (`text.c`). These high-resolution entries
+  are composited over the 8-bit framebuffer and dropped when anything paints
+  over them. Window and popup save-under saves and restores them with the
+  pixels. Text drawn into offscreen buffers is anti-aliased into the
+  palette.
 
 ## Main menu
 
@@ -119,15 +165,35 @@ Alerts used: 300, 350, 10000, 10001, 10005, 20000–20003.
 
 ## Files
 
-All files are opened by name relative to the app folder:
+The port presents the game data folder as a single HFS volume (`file.c`).
+A Mac file `NAME` is stored as `NAME` (data fork), `NAME.rsrc` (resource
+fork) and `NAME.finf` (Finder type and creator). All files are opened by
+name relative to the app folder:
 
 - "BDX_Data", opened and closed repeatedly
 - the level set named in the prefs (default "Original Levels")
 
-The prefs file is "Bonkheads Deluxe Prefs" in FindFolder('pref'). It holds:
+The prefs file is "Bonkheads Deluxe Prefs" in FindFolder('pref'), which
+the port maps to the game data folder. It holds:
 
 - 'Bonk' 0: 0x914 bytes of settings
-- 'HiSc' 128/129: high scores
+- 'HiSc' 128/129: the one- and two-player high scores. Clearing them
+  calls AddResource with a handle that is already a resource. That must
+  fail with `addResFailed`; it must not free the handle.
+
+Byte offsets in 'Bonk' 0 that matter (`tools/readprefs.py` prints them):
+
+| Offset | Setting |
+|---|---|
+| 0, 2, 4 | Player 1 keys: left, jump, right |
+| 6, 8, 10 | Player 2 keys: left, jump, right |
+| 1548 | volume popup item (11 = off) |
+| 1550 | music on/off |
+| 1552 | difficulty (0 easy, 1 medium, 2 hard) |
+| 2067 | level set name (Str63) |
+
+At runtime the game copies these into globals: difficulty to A5-32652,
+music to A5-3920 and the key codes from A5-32640.
 
 Saved games are written with StandardPutFile into a file of type 'BKSV'
 holding an 'SVGM' 128 resource. They are loaded with StandardGetFile.
@@ -138,6 +204,12 @@ holding an 'SVGM' 128 resource. They are loaded with StandardGetFile.
 - Handles must never move once allocated.
 - Detaching or disposing the same handle twice must be tolerated. So must
   DisposePtr on a pointer the heap does not own.
+
+## Dialogs
+
+- ModalDialog must deliver exactly one update event to a new dialog.
+  Delivering it on every pass makes the Preferences filter redraw forever.
+- HideControl erases the control's rectangle.
 
 ## Sound
 

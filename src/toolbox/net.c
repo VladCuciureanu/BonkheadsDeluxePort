@@ -1,8 +1,9 @@
 /* AppleTalk (.MPP driver) emulation over UDP. See docs/network.md.
  *
  * The game's own DDP/NBP protocol code runs unchanged; this module carries
- * its datagrams over UDP and implements name registration/lookup with LAN
- * broadcast probes plus explicit --connect addresses. */
+ * its datagrams over UDP. NET HOST listens on a well-known port; NET JOIN
+ * announces itself to the address the player types (or --connect) and to
+ * the LAN broadcast address until the host replies. */
 #include "toolbox.h"
 #include "file.h"
 #include "platform/udp.h"

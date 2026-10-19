@@ -1,4 +1,7 @@
-"""Classic Mac OS resource fork reader."""
+"""Classic Mac OS resource fork reader.
+
+usage: python -I tools/rsrc.py <file.rsrc> [-v]   (summarise; -v lists every resource)
+"""
 import struct, sys
 from collections import OrderedDict
 
@@ -26,6 +29,8 @@ def read_rsrc(data):
     return res
 
 if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        sys.exit(__doc__.strip())
     r = read_rsrc(open(sys.argv[1], 'rb').read())
     for t, d in r.items():
         tot = sum(len(b) for _, _, b in d.values())

@@ -14,18 +14,35 @@
 
 static void usage(void)
 {
-    printf("Bonkheads Deluxe (cross-platform port)\n\n"
-           "  --data DIR          folder containing the extracted game files\n"
-           "                      (default: <exe dir>/data/Bonkheads Deluxe)\n"
-           "  --scale N           window scale factor (default 2)\n"
-           "  --fullscreen        start in fullscreen (Alt+Enter toggles)\n"
-           "  --nosound           disable audio\n"
-           "  --port N            UDP port for network games (default 24731)\n"
-           "  --connect HOST[:P]  network host: also look for a joiner at HOST\n"
-           "                      (may be repeated; LAN joiners are found automatically)\n"
-           "  --hold N            max ticks a game packet waits for the game (default 8)\n"
-           "  --no-redundancy     send each game packet once instead of twice\n"
-           "  --trace             verbose trap tracing\n");
+    printf("Bonkheads Deluxe (cross-platform port)\n"
+           "usage: bonkheads [options]\n\n"
+           "Game:\n"
+           "  --data DIR            folder with the extracted game files\n"
+           "                        (default: <exe dir>/data/Bonkheads Deluxe)\n"
+           "  --scale N             window scale factor (default 2)\n"
+           "  --fullscreen          start in fullscreen (Alt+Enter toggles)\n"
+           "  --nosound             disable audio\n"
+           "  --pixel-text          draw text in the original low-resolution fonts\n"
+           "\n"
+           "Network (see docs/network.md):\n"
+           "  --port N              UDP port the host listens on (default 24731)\n"
+           "  --connect HOST[:PORT] NET JOIN: join this host without asking (repeatable)\n"
+           "  --hold N              ticks a game packet may wait for the game (default 8)\n"
+           "  --no-redundancy       send each game packet once instead of twice\n"
+           "  --raw-net             no pacing or redundancy (original behaviour)\n"
+           "  --dedup               strip repeated registered events (experimental)\n"
+           "  --sim-latency MS      testing: delay every outgoing packet\n"
+           "  --sim-loss PCT        testing: drop this share of outgoing packets\n"
+           "\n"
+           "Debugging and automation:\n"
+           "  --trace               log every Toolbox call\n"
+           "  --netlog              log network events\n"
+           "  --headless            hidden window; real keyboard and mouse are ignored\n"
+           "  --shot SECONDS FILE   save a screenshot (.bmp) after SECONDS, then exit\n"
+           "  --press T:KEY[:FRAMES] at T seconds, hold Mac key code KEY (e.g. 0x24 Return)\n"
+           "  --click T:X:Y         at T seconds, click at game coordinates X,Y\n"
+           "  --move T:X:Y          at T seconds, move the mouse to X,Y\n"
+           "  --dump-a5 OFF:LEN     log LEN bytes of game globals at A5+OFF at --shot time\n");
 }
 
 /* hang diagnostics: report where the game is stuck if it stops reaching the

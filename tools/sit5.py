@@ -1,4 +1,8 @@
-"""Minimal StuffIt 5 archive parser/extractor (methods 0, 13, 15)."""
+"""Minimal StuffIt 5 archive parser/extractor (methods 0, 13, 15).
+
+usage: python -I tools/sit5.py --extract <archive.sit> <output dir>
+       python -I tools/sit5.py <archive.sit>          (list the contents)
+"""
 import struct, sys, os
 
 def be16(b, o): return struct.unpack_from('>H', b, o)[0]
@@ -214,6 +218,8 @@ def extract(archive, outdir):
 if __name__ == '__main__' and len(sys.argv) == 4 and sys.argv[1] == '--extract':
     extract(sys.argv[2], sys.argv[3])
 elif __name__ == '__main__':
+    if len(sys.argv) != 2:
+        sys.exit(__doc__.strip())
     buf = open(sys.argv[1], 'rb').read()
     for e in parse(buf):
         if e.isdir:

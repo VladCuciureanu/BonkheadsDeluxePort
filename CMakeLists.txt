@@ -6,7 +6,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # The game code is recompiled at build time from YOUR copy of the original
 # archive; nothing derived from the original program is stored in this repo.
-set(BONKHEADS_SIT "${CMAKE_SOURCE_DIR}/Bonkheads_Deluxe.SIT" CACHE FILEPATH
+set(BONKHEADS_SIT_DEFAULT "${CMAKE_SOURCE_DIR}/Bonkheads_Deluxe.SIT")
+set(BONKHEADS_SIT "${BONKHEADS_SIT_DEFAULT}" CACHE FILEPATH
     "Path to the original Bonkheads_Deluxe.SIT (StuffIt 5) archive")
 # Build the port (runtime, Toolbox, platform) against an empty game image
 # instead of recompiling the archive. The result links and runs --help but
@@ -15,7 +16,31 @@ option(BONKHEADS_STUB_GAME "Link against an empty stub instead of the recompiled
 option(BONKHEADS_WERROR "Treat warnings in the port sources as errors" OFF)
 
 if(NOT BONKHEADS_STUB_GAME)
-    find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+    # Unless a path was given, accept the archive under any name in the
+    # repository root.
+    if(BONKHEADS_SIT STREQUAL BONKHEADS_SIT_DEFAULT AND NOT EXISTS "${BONKHEADS_SIT}")
+        file(GLOB SIT_CANDIDATES "${CMAKE_SOURCE_DIR}/*.sit" "${CMAKE_SOURCE_DIR}/*.SIT")
+        list(REMOVE_DUPLICATES SIT_CANDIDATES)
+        list(LENGTH SIT_CANDIDATES SIT_COUNT)
+        if(SIT_COUNT EQUAL 1)
+            set(BONKHEADS_SIT "${SIT_CANDIDATES}" CACHE FILEPATH "" FORCE)
+        endif()
+    endif()
+    if(NOT EXISTS "${BONKHEADS_SIT}")
+        message(FATAL_ERROR
+            "Game archive not found: ${BONKHEADS_SIT}\n"
+            "This repository contains no game data. Copy your own Bonkheads_Deluxe.SIT "
+            "into ${CMAKE_SOURCE_DIR}, or pass -DBONKHEADS_SIT=/path/to/Bonkheads_Deluxe.SIT. "
+            "To build only the engine without the game, pass -DBONKHEADS_STUB_GAME=ON.")
+    endif()
+    message(STATUS "Game archive: ${BONKHEADS_SIT}")
+    find_package(Python3 3.8 COMPONENTS Interpreter)
+    if(NOT Python3_FOUND)
+        message(FATAL_ERROR
+            "Python 3.8 or newer is required to extract and recompile the game. "
+            "Install it from https://www.python.org/downloads/ (on Windows, tick "
+            "\"Add python.exe to PATH\") and run the build again.")
+    endif()
 endif()
 
 include(FetchContent)
@@ -92,7 +117,8 @@ else()
     target_link_libraries(bonkheads PRIVATE m)
 endif()
 
-# Ship the extracted resource forks next to the executable.
+# Ship the extracted resource forks next to the executable (a no-op when the
+# build folder is the executable's folder, as with Ninja and Makefiles).
 if(NOT BONKHEADS_STUB_GAME)
     add_custom_command(TARGET bonkheads POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${DATA_DIR}" "$<TARGET_FILE_DIR:bonkheads>/data"

@@ -4,6 +4,7 @@
 extracted/
 disasm/
 build/
+build-*/
 out/
 __pycache__/
 *.pyc

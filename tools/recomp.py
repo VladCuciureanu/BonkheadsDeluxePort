@@ -919,4 +919,7 @@ def main(path, outdir):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        sys.exit('usage: python -I tools/recomp.py <"Bonkheads Deluxe.rsrc"> <output dir>\n'
+                 '(the build runs this for you; see README.md)')
     main(sys.argv[1], sys.argv[2])

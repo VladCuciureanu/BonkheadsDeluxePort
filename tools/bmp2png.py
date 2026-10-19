@@ -1,4 +1,7 @@
-"""Convert a 24/32-bit uncompressed BMP to PNG (debug helper, stdlib only)."""
+"""Convert a 24/32-bit uncompressed BMP to PNG (debug helper, stdlib only).
+
+usage: python -I tools/bmp2png.py <in.bmp> <out.png>
+"""
 import struct, sys, zlib
 
 def bmp_to_png(src, dst):
@@ -23,4 +26,6 @@ def bmp_to_png(src, dst):
     open(dst, 'wb').write(png)
 
 if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        sys.exit(__doc__.strip())
     bmp_to_png(sys.argv[1], sys.argv[2])
