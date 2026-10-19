@@ -8,3 +8,7 @@ build-*/
 out/
 __pycache__/
 *.pyc
+
+# Local Claude Code state
+.claude/settings.local.json
+.claude/worktrees/
