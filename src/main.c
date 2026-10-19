@@ -44,6 +44,39 @@ void debug_dump_globals(void)
     }
 }
 
+/* debug: --poke-a5 SECONDS:OFFSET:HEXBYTES[:FUNC] writes A5-relative game
+ * globals at a given time (optionally only once the original function FUNC is
+ * running, e.g. STANDARDPLAY for "during gameplay"); --snap SECONDS saves an extra screenshot (FILE-SECONDS.bmp)
+ * without exiting */
+static struct { double at; int off, len; uint8_t bytes[16]; char fn[64]; bool done; } pokes[32];
+static int npokes;
+static struct { double at; bool done; } snaps[32];
+static int nsnaps;
+extern char g_shot_path[512];
+
+void debug_tick(double now)
+{
+    double batch = -1;   /* pokes given the same time apply together; later ones wait for the next tick */
+    for (int i = 0; i < npokes; i++)
+        if (!pokes[i].done && now >= pokes[i].at && (batch < 0 || pokes[i].at == batch)) {
+            const char *fn = func_name_for(g_cur_fn);
+            if (pokes[i].fn[0] && (!fn || strcmp(fn, pokes[i].fn))) continue;
+            pokes[i].done = true; batch = pokes[i].at;
+            for (int k = 0; k < pokes[i].len; k++) wrb(A[5] + pokes[i].off + k, pokes[i].bytes[k]);
+            log_info("poked A5%+d (%d bytes)", pokes[i].off, pokes[i].len);
+        }
+    for (int i = 0; i < nsnaps; i++)
+        if (!snaps[i].done && now >= snaps[i].at) {
+            snaps[i].done = true;
+            char path[600]; size_t n = strlen(g_shot_path);
+            if (n > 4 && !strcmp(g_shot_path + n - 4, ".bmp")) n -= 4;
+            snprintf(path, sizeof path, "%.*s-%g.bmp", (int)n, g_shot_path, snaps[i].at);
+            plat_request_capture(path);
+            log_info("snapshot saved to %s", path);
+            break;   /* one capture per presented frame */
+        }
+}
+
 void stackdump_init(void);
 void stackdump_main_thread(void);
 
@@ -106,6 +139,19 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--dump-a5") && i + 1 < argc && ndumps < 16) {
             if (sscanf(argv[++i], "%i:%i", &dumps[ndumps].off, &dumps[ndumps].len) == 2) ndumps++;
         }
+        else if (!strcmp(a, "--poke-a5") && i + 1 < argc && npokes < 32) {
+            char hex[64], fn[64] = ""; double at; int off;
+            if (sscanf(argv[++i], "%lf:%i:%63[0-9a-fA-F]:%63s", &at, &off, hex, fn) >= 3) {
+                snprintf(pokes[npokes].fn, sizeof pokes[npokes].fn, "%s", fn);
+                int len = 0;
+                for (const char *h = hex; h[0] && h[1] && len < 16; h += 2) {
+                    unsigned v; if (sscanf(h, "%2x", &v) != 1) break;
+                    pokes[npokes].bytes[len++] = (uint8_t)v;
+                }
+                pokes[npokes].at = at; pokes[npokes].off = off; pokes[npokes].len = len; npokes++;
+            }
+        }
+        else if (!strcmp(a, "--snap") && i + 1 < argc && nsnaps < 32) snaps[nsnaps++].at = atof(argv[++i]);
         else if (!strcmp(a, "--pixel-text")) { extern bool g_text_hires; g_text_hires = false; }
         else if (!strcmp(a, "--netlog")) { extern int g_netlog; g_netlog = 1; }
         else if (!strcmp(a, "--shot") && i + 2 < argc) {

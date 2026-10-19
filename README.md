@@ -162,14 +162,21 @@ trip with 5% packet loss.
   - level and character-map transfer
   - synchronized play
 - the network game under simulated latency and loss
+- saving at the Worlds screen (including overwriting a save) and Load Game,
+  for one- and two-player saves
+- game over, high-score name entry (one player and two-player combo) and
+  the new score in the main-menu list
+- all twelve worlds and their bosses, and the finale levels after
+  Trollsville (reached with the JumpLevel cheat and `--poke-a5`)
+- local two-player games and the Bonus Levels set
+- quitting from the menu and with Command-Q, which leave prefs, high scores
+  and saves intact (Command-Q during play ends the game, as on the Mac)
 
 **Not yet verified:**
 
 - **macOS and Linux builds.** The code only uses SDL3, standard C and BSD
   sockets, but the build has only been run on Windows so far.
-- **The whole game played through.** Later worlds, bosses, save/load,
-  high-score entry and the ending have not been tested yet.
-- **The high-score panel on the main menu,** which currently stays black.
+- **The ending,** played all the way through.
 
 **Text and fonts:**
 
@@ -198,5 +205,16 @@ trip with 5% packet loss.
 | `--shot SECONDS FILE.bmp` | Save a screenshot and exit |
 | `--press SECONDS:MACKEY[:FRAMES]` | Scripted key press |
 | `--click SECONDS:X:Y` | Scripted mouse click |
+| `--move SECONDS:X:Y` | Scripted pointer move |
+| `--snap SECONDS` | Save an extra screenshot (`FILE-SECONDS.bmp`) and keep running |
+| `--dump-a5 OFFSET:LEN` | Log game globals (relative to A5) at `--shot` time |
+| `--poke-a5 SECONDS:OFFSET:HEX[:FUNC]` | Write game globals, optionally only once the original function `FUNC` runs |
 
-`tools/shot.ps1` wraps these for automated runs on Windows.
+`tools/shot.ps1` wraps these for automated runs on Windows. Set
+`BONK_KEEP_DATA=1` to reuse the data copy from the previous run of the same
+name, for example to load a game saved in an earlier run.
+
+Useful pokes while testing: `-28487:01:STANDARDPLAY` ends the current level
+(the game's "level done" flag), and `-27796:<8 hex digits>:STANDARDPLAY`
+sets player 1's score. Hold Shift, Control and Option while clicking
+1 PLAYER to pick a starting world.

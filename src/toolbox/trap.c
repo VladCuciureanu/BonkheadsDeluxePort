@@ -53,7 +53,7 @@ void trap_dispatch(uint16_t op)
         log_fatal("unimplemented Toolbox trap $%04X", op);
         return;
     }
-    if (g_log_trace) log_trace("trap %s ($%04X) sp=%08X", e->name, op, A[7]);
+    if (g_log_trace) { const char *fn = func_name_for(g_cur_fn); log_trace("trap %s ($%04X) sp=%08X in %s", e->name, op, A[7], fn ? fn : "?"); }
     uint16_t outer = g_cur_trap;
     g_cur_trap = op;
     e->fn(op);
