@@ -109,17 +109,45 @@ Optional flags:
 | `--scale N` | Window scale factor |
 | `--fullscreen` | Start in fullscreen; Alt+Enter toggles it |
 | `--nosound` | Disable audio |
+| `--no-keyboard-grab` | Let the Windows/Super and Alt keys reach the OS during play |
 
 Controls are the original defaults:
 
 | Player | Left | Jump | Right |
 |---|---|---|---|
 | Player 1 | ← | ↑ | → |
-| Player 2 | Control | Option (Alt) | Command (Windows/Super key) |
+| Player 2 | Ctrl | Windows/Super (Option on a Mac) | Alt (Command on a Mac) |
 
-You can rebind keys in **Preferences → Keys**. Caps Lock pauses, as it did on
-the Mac. The mouse pointer shows in menus and dialogs, and hides during play
-as the game requests. Saved games and preferences go in the game data folder.
+The Mac keyboard's bottom-left row is Control, Option, Command. The PC's is
+Ctrl, Windows, Alt. On Windows and Linux the port maps these keys by
+position, as SheepShaver and Basilisk II do. The game's own names for them
+are:
+
+| The game says | Mac | Windows / Linux |
+|---|---|---|
+| CNTL | Control | Ctrl |
+| OPTN | Option | Windows / Super |
+| CMND, ⌘ | Command | Alt |
+
+So "⌘ Q – Quits Game" is Alt+Q on a PC. Player 2 plays with the left
+Ctrl, Windows and Alt keys, in the same left/jump/right order as on the Mac.
+During play the game grabs the keyboard, so the Windows/Super key doesn't
+open the Start menu or the Activities overview. This also blocks Alt+Tab.
+Menus and dialogs release the grab. On Wayland the desktop
+may ask once whether the game may inhibit shortcuts. To turn the grab off,
+pass `--no-keyboard-grab`.
+
+**Gamepads.** The first gamepad controls player 1 and the second controls
+player 2. Use the d-pad or left stick to move and A (the bottom face button)
+to jump. A pad presses whatever keys that player has bound, so rebinding
+keys never breaks it. You can mix the two, for example player 1 on the
+keyboard and player 2 on a pad. Menus and dialogs still need the mouse and
+keyboard.
+
+You can rebind keys in **Preferences → Player Controls**. Caps Lock pauses,
+as it did on the Mac. The mouse pointer shows in menus and dialogs, and
+hides during play as the game requests. Saved games and preferences go in
+the game data folder.
 
 ### Internet multiplayer
 
@@ -198,5 +226,6 @@ trip with 5% packet loss.
 | `--shot SECONDS FILE.bmp` | Save a screenshot and exit |
 | `--press SECONDS:MACKEY[:FRAMES]` | Scripted key press |
 | `--click SECONDS:X:Y` | Scripted mouse click |
+| `--pad SECONDS:PAD:CONTROL[:FRAMES]` | Scripted input on virtual gamepad 1 or 2: `left`, `right`, `up`, `down`, `a`, `b`, `stickleft`, `stickright` |
 
 `tools/shot.ps1` wraps these for automated runs on Windows.

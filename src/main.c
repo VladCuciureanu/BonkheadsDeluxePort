@@ -20,6 +20,8 @@ static void usage(void)
            "  --scale N           window scale factor (default 2)\n"
            "  --fullscreen        start in fullscreen (Alt+Enter toggles)\n"
            "  --nosound           disable audio\n"
+           "  --no-keyboard-grab  let the Windows/Super and Alt keys reach the OS\n"
+           "                      during play (they are player 2's default keys)\n"
            "  --port N            UDP port for network games (default 24731)\n"
            "  --connect HOST[:P]  network host: also look for a joiner at HOST\n"
            "                      (may be repeated; LAN joiners are found automatically)\n"
@@ -117,6 +119,11 @@ int main(int argc, char **argv)
             double at = 0; int mac = 0, frames = 6;
             if (sscanf(argv[++i], "%lf:%i:%d", &at, &mac, &frames) >= 2) plat_script_key(at, mac, frames);
         }
+        else if (!strcmp(a, "--pad") && i + 1 < argc) {
+            double at = 0; int pad = 1, frames = 6; char what[32] = "";
+            if (sscanf(argv[++i], "%lf:%d:%31[a-zA-Z]:%d", &at, &pad, what, &frames) >= 3) plat_script_pad(at, pad, what, frames);
+        }
+        else if (!strcmp(a, "--no-keyboard-grab")) plat_set_keyboard_grab(false);
         else if (!strcmp(a, "--move") && i + 1 < argc) {
             double at = 0; int x = 0, y = 0;
             if (sscanf(argv[++i], "%lf:%d:%d", &at, &x, &y) == 3) plat_script_move(at, x, y);
