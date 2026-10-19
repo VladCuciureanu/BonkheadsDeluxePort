@@ -1,0 +1,9 @@
+# Original game data is never committed: supply your own copy.
+*.SIT
+*.sit
+extracted/
+disasm/
+build/
+out/
+__pycache__/
+*.pyc
