@@ -2,9 +2,11 @@
 # usage: tools\shot.ps1 <seconds> <outname> [extra args...]
 param([double]$Seconds, [string]$Name, [Parameter(ValueFromRemainingArguments = $true)][string[]]$Extra)
 $build = Join-Path $PSScriptRoot "..\build"
-$scratch = $env:BONK_SHOT_DIR; if (-not $scratch) { $scratch = $build }
-$bmp = Join-Path $build "$Name.bmp"
-$log = Join-Path $build "$Name.log"
+$logs = Join-Path $build "logs"
+New-Item -ItemType Directory -Force $logs | Out-Null
+$scratch = $env:BONK_SHOT_DIR; if (-not $scratch) { $scratch = $logs }
+$bmp = Join-Path $logs "$Name.bmp"
+$log = Join-Path $logs "$Name.log"
 $runArgs = New-Object System.Collections.Generic.List[string]
 if (-not $env:BONK_SOUND) { $runArgs.Add("--nosound") }
 $runArgs.Add("--shot"); $runArgs.Add("$Seconds"); $runArgs.Add("`"$bmp`"")
