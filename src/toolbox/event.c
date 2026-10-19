@@ -247,8 +247,21 @@ static void T_SystemTask(uint16_t op) { (void)op; evt_idle(); }
 static void T_SystemClick(uint16_t op) { (void)op; (void)ARG32(); (void)ARG32(); }
 static void T_SystemEvent(uint16_t op) { (void)op; (void)ARG32(); RET8(0); }
 
+/* Gamepad bindings: the game keeps each player's left/right/jump key as a
+ * word global (key code in the low byte), set from the preferences when a
+ * game starts. Until then they are all zero and the pads press nothing. */
+static int pad_binding(int player, int action)
+{
+    static const int16_t off[2][3] = { { -32640, -32642, -32644 }, { -32646, -32648, -32650 } };
+    if (!A[5]) return -1;
+    const int16_t *o = off[player & 1];
+    if (!rdw(A[5] + o[0]) && !rdw(A[5] + o[1]) && !rdw(A[5] + o[2])) return -1;
+    return rdw(A[5] + o[action]) & 0x7F;
+}
+
 void event_register_traps(void)
 {
+    plat_set_pad_binding(pad_binding);
     trap_register(0xA975, T_TickCount, "TickCount");
     trap_register(0xA976, T_GetKeys, "GetKeys");
     trap_register(0xA974, T_Button, "Button");

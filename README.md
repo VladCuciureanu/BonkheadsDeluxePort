@@ -73,13 +73,33 @@ time you want to play; it only rebuilds what has changed.
 | Player | Left | Jump | Right |
 |---|---|---|---|
 | Player 1 | ← | ↑ | → |
-| Player 2 | Control | Option (Alt) | Command (Windows / Super key) |
+| Player 2 | Ctrl | Windows / Super (Option on a Mac) | Alt (Command on a Mac) |
+
+**Gamepads** work too: the first pad is player 1 and the second is player 2.
+Move with the d-pad or left stick and jump with A (the bottom button). You
+can mix the two, for example player 1 on the keyboard and player 2 on a pad.
+Menus still need the mouse and keyboard.
+
+The game names the Mac's bottom-left keys. On a PC they sit in the same
+places:
+
+| The game says | Mac | Windows / Linux |
+|---|---|---|
+| CNTL | Control | Ctrl |
+| OPTN | Option | Windows / Super |
+| CMND, ⌘ | Command | Alt |
+
+So "⌘ Q – Quits Game" means Alt+Q on a PC.
+
+During play the game grabs the keyboard, so the Windows key doesn't open the
+Start menu. This also blocks Alt+Tab until you're back in a menu. Start with
+`--no-keyboard-grab` to turn this off.
 
 - **Change the keys** in **Preferences → Player Controls**.
 - **Pause** with Caps Lock, as on the original Mac.
 - **Fullscreen** toggles with Alt+Enter.
 - **Menu buttons** show what they do when you hover over them.
-- **Quit** with **QUIT** on the main menu.
+- **Quit** with **QUIT** on the main menu, or ⌘Q (Alt+Q on a PC).
 
 Game options go after the command, for example `play.bat --fullscreen` or
 `./play.sh --scale 3`:
@@ -90,6 +110,7 @@ Game options go after the command, for example `play.bat --fullscreen` or
 | `--scale N` | Window size multiplier (default 2). You can also drag the window to any size. |
 | `--nosound` | Turn audio off. |
 | `--pixel-text` | Use the original low-resolution fonts. |
+| `--no-keyboard-grab` | Let the Windows and Alt keys reach the system during play. |
 
 `--help` lists every option.
 

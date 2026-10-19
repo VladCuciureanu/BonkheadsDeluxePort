@@ -234,7 +234,12 @@ holding an 'SVGM' 128 resource. They are loaded with StandardGetFile.
   mirror the same state.
 - Default controls:
   - Player 1: arrow keys. Left $7B, up $7E, right $7C.
-  - Player 2: Control $3B, Option $3A, Command $37.
+  - Player 2: Control $3B (left), Option $3A (jump), Command $37 (right).
+- The bindings live in word globals, key code in the low byte: player 1
+  left/right/jump at A5-32640/-32642/-32644, player 2 at
+  -32646/-32648/-32650. SetGlobals fills them from the prefs when a game
+  starts; StartWacky swaps left and right. The platform layer reads them
+  every frame to turn gamepad input into KeyMap bits.
 - Command-Q quits.
 - MainLoop waits until `TickCount >= t0 + 2`, so the game runs at 30 fps.
 - Random is the Toolbox Random on the QD randSeed at A5+$67D4. The seed is

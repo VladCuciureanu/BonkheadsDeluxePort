@@ -42,4 +42,11 @@ void plat_show_cursor(bool show);
 void plat_script_key(double at, int mac, int frames);
 void plat_script_click(double at, int x, int y);
 void plat_script_move(double at, int x, int y);
+void plat_script_pad(double at, int pad, const char *control, int frames);  /* pad 1 or 2 */
+/* gamepads press the Mac keys the game has bound for each player: the
+ * callback returns the key code for (player 0/1, PAD_LEFT/RIGHT/JUMP), or -1 */
+enum { PAD_LEFT, PAD_RIGHT, PAD_JUMP };
+typedef int (*PlatPadBinding)(int player, int action);
+void plat_set_pad_binding(PlatPadBinding fn);
+void plat_set_keyboard_grab(bool on);   /* grab Windows/Alt keys during play (default on) */
 bool plat_save_bmp(const char *path, const uint8_t *fb, int pitch, const uint8_t pal[256][3]);

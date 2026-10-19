@@ -14,6 +14,9 @@ static bool headless;         /* hidden window, real input ignored (automated te
 static SDL_FRect view;          /* where the 640x480 image lands, in output pixels */
 static float view_scale = 1;
 static char capture_path[512];  /* save the next presented frame here */
+static uint8_t kb_keys[16];     /* KeyMap bits from the keyboard (and --press) */
+static uint8_t pad_keys[16];    /* KeyMap bits from gamepads */
+static bool cursor_hidden, kb_grab = true;
 
 #define MAXTEXT 1024
 static SDL_Texture *texts[MAXTEXT];
@@ -22,7 +25,19 @@ static SDL_Texture *texts[MAXTEXT];
 static PlatEvent evq[EVQ];
 static int evh, evt;
 
-/* SDL scancode -> Mac virtual key code (ADB extended keyboard) */
+/* SDL scancode -> Mac virtual key code (ADB extended keyboard).
+ * The Mac's bottom-left row is Control | Option | Command, the PC's is
+ * Ctrl | Windows | Alt. Off the Mac the keys are mapped by position (as
+ * SheepShaver and Basilisk II do): Windows/Super is Option and Alt is
+ * Command, so player 2's default Control/Option/Command keys are the PC's
+ * Ctrl/Windows/Alt in the same left/jump/right order. */
+#if defined(SDL_PLATFORM_APPLE)
+#define MAC_KMOD_CMD SDL_KMOD_GUI
+#define MAC_KMOD_OPT SDL_KMOD_ALT
+#else
+#define MAC_KMOD_CMD SDL_KMOD_ALT
+#define MAC_KMOD_OPT SDL_KMOD_GUI
+#endif
 static int16_t sc2mac[SDL_SCANCODE_COUNT];
 
 static void build_keymap(void)
@@ -42,10 +57,15 @@ static void build_keymap(void)
         {SDL_SCANCODE_SEMICOLON, 0x29}, {SDL_SCANCODE_BACKSLASH, 0x2A}, {SDL_SCANCODE_COMMA, 0x2B},
         {SDL_SCANCODE_SLASH, 0x2C}, {SDL_SCANCODE_N, 0x2D}, {SDL_SCANCODE_M, 0x2E}, {SDL_SCANCODE_PERIOD, 0x2F},
         {SDL_SCANCODE_TAB, 0x30}, {SDL_SCANCODE_SPACE, 0x31}, {SDL_SCANCODE_GRAVE, 0x32},
-        {SDL_SCANCODE_BACKSPACE, 0x33}, {SDL_SCANCODE_ESCAPE, 0x35}, {SDL_SCANCODE_LGUI, 0x37},
-        {SDL_SCANCODE_RGUI, 0x37}, {SDL_SCANCODE_LSHIFT, 0x38}, {SDL_SCANCODE_CAPSLOCK, 0x39},
-        {SDL_SCANCODE_LALT, 0x3A}, {SDL_SCANCODE_LCTRL, 0x3B}, {SDL_SCANCODE_RSHIFT, 0x3C},
-        {SDL_SCANCODE_RALT, 0x3D}, {SDL_SCANCODE_RCTRL, 0x3E}, {SDL_SCANCODE_KP_PERIOD, 0x41},
+        {SDL_SCANCODE_BACKSPACE, 0x33}, {SDL_SCANCODE_ESCAPE, 0x35},
+#if defined(SDL_PLATFORM_APPLE)
+        {SDL_SCANCODE_LGUI, 0x37}, {SDL_SCANCODE_RGUI, 0x37}, {SDL_SCANCODE_LALT, 0x3A}, {SDL_SCANCODE_RALT, 0x3D},
+#else
+        {SDL_SCANCODE_LALT, 0x37}, {SDL_SCANCODE_RALT, 0x37}, {SDL_SCANCODE_LGUI, 0x3A}, {SDL_SCANCODE_RGUI, 0x3D},
+#endif
+        {SDL_SCANCODE_LSHIFT, 0x38}, {SDL_SCANCODE_CAPSLOCK, 0x39},
+        {SDL_SCANCODE_LCTRL, 0x3B}, {SDL_SCANCODE_RSHIFT, 0x3C},
+        {SDL_SCANCODE_RCTRL, 0x3E}, {SDL_SCANCODE_KP_PERIOD, 0x41},
         {SDL_SCANCODE_KP_MULTIPLY, 0x43}, {SDL_SCANCODE_KP_PLUS, 0x45}, {SDL_SCANCODE_NUMLOCKCLEAR, 0x47},
         {SDL_SCANCODE_KP_DIVIDE, 0x4B}, {SDL_SCANCODE_KP_ENTER, 0x4C}, {SDL_SCANCODE_KP_MINUS, 0x4E},
         {SDL_SCANCODE_KP_EQUALS, 0x51}, {SDL_SCANCODE_KP_0, 0x52}, {SDL_SCANCODE_KP_1, 0x53},
@@ -77,6 +97,10 @@ bool plat_init(int scale, bool fullscreen)
         log_warn("SDL_Init: %s", SDL_GetError());
         return false;
     }
+    /* SDL drops pad button presses while no window has focus; the hidden
+     * headless window never does, so let scripted --pad input through */
+    if (headless) SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) log_warn("no gamepad support: %s", SDL_GetError());
     build_keymap();
     if (scale < 1) scale = 2;
     win = SDL_CreateWindow("Bonkheads Deluxe", SCREEN_W * scale, SCREEN_H * scale,
@@ -104,10 +128,10 @@ static uint16_t mac_modifiers(void)
 {
     SDL_Keymod m = headless ? SDL_KMOD_NONE : SDL_GetModState();
     uint16_t r = 0;
-    if (m & SDL_KMOD_GUI) r |= 0x0100;
+    if (m & MAC_KMOD_CMD) r |= 0x0100;
     if (m & SDL_KMOD_SHIFT) r |= 0x0200;
     if (m & SDL_KMOD_CAPS) r |= 0x0400;
-    if (m & SDL_KMOD_ALT) r |= 0x0800;
+    if (m & MAC_KMOD_OPT) r |= 0x0800;
     if (m & SDL_KMOD_CTRL) r |= 0x1000;
     if (!in.button) r |= 0x0080; /* btnState: set when button is UP */
     return r;
@@ -132,12 +156,14 @@ static uint8_t key_char(SDL_Keycode k, SDL_Keymod m, int16_t mac)
     }
 }
 
-static void set_key(int16_t mac, bool down)
+static void set_bit(uint8_t *map, int mac, bool down)
 {
-    if (mac < 0) return;
-    if (down) in.keymap[mac >> 3] |= (uint8_t)(1u << (mac & 7));
-    else in.keymap[mac >> 3] &= (uint8_t)~(1u << (mac & 7));
+    if (mac < 0 || mac > 127) return;
+    if (down) map[mac >> 3] |= (uint8_t)(1u << (mac & 7));
+    else map[mac >> 3] &= (uint8_t)~(1u << (mac & 7));
 }
+
+static void set_key(int16_t mac, bool down) { set_bit(kb_keys, mac, down); }
 
 static void update_view(void)
 {
@@ -229,10 +255,134 @@ static void run_script(void)
     }
 }
 
+/* Gamepads: the first pad plays player 1, the second player 2. The d-pad or
+ * left stick and the A (south) button press whatever Mac keys that player
+ * has bound to left, right and jump, so the game sees ordinary key presses
+ * through GetKeys. The bindings are read live every frame (the game swaps
+ * left and right in "wacky" mode). */
+static SDL_Gamepad *pads[2];
+static PlatPadBinding pad_binding;
+static int npad_scripts;
+static SDL_Joystick *vpads[2];      /* virtual pads for --pad test input */
+
+void plat_set_pad_binding(PlatPadBinding fn) { pad_binding = fn; }
+
+static void pad_added(SDL_JoystickID id)
+{
+    if (headless && !SDL_IsJoystickVirtual(id)) return;   /* tests see only their own pads */
+    for (int i = 0; i < 2; i++) if (pads[i] && SDL_GetGamepadID(pads[i]) == id) return;
+    for (int i = 0; i < 2; i++) {
+        if (pads[i]) continue;
+        pads[i] = SDL_OpenGamepad(id);
+        if (pads[i]) {
+            SDL_SetGamepadPlayerIndex(pads[i], i);
+            log_info("gamepad %d (player %d): %s", i + 1, i + 1, SDL_GetGamepadName(pads[i]));
+        }
+        return;
+    }
+}
+
+static void pad_removed(SDL_JoystickID id)
+{
+    for (int i = 0; i < 2; i++)
+        if (pads[i] && SDL_GetGamepadID(pads[i]) == id) { SDL_CloseGamepad(pads[i]); pads[i] = NULL; }
+}
+
+static void update_pads(void)
+{
+    memset(pad_keys, 0, sizeof pad_keys);
+    if (!pad_binding) return;
+    const int dead = 16000;
+    for (int i = 0; i < 2; i++) {
+        SDL_Gamepad *g = pads[i];
+        if (!g) continue;
+        int lx = SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFTX);
+        bool left = SDL_GetGamepadButton(g, SDL_GAMEPAD_BUTTON_DPAD_LEFT) || lx < -dead;
+        bool right = SDL_GetGamepadButton(g, SDL_GAMEPAD_BUTTON_DPAD_RIGHT) || lx > dead;
+        bool jump = SDL_GetGamepadButton(g, SDL_GAMEPAD_BUTTON_SOUTH);
+        if (left) set_bit(pad_keys, pad_binding(i, PAD_LEFT), true);
+        if (right) set_bit(pad_keys, pad_binding(i, PAD_RIGHT), true);
+        if (jump) set_bit(pad_keys, pad_binding(i, PAD_JUMP), true);
+    }
+}
+
+/* --pad: scripted input on virtual gamepads, through the same SDL path */
+typedef struct { double at; int pad, button, axis, value, frames, state; } PadScript;
+static PadScript pad_script[64];
+
+void plat_script_pad(double at, int pad, const char *control, int frames)
+{
+    static const struct { const char *name; int button, axis, value; } names[] = {
+        {"left", SDL_GAMEPAD_BUTTON_DPAD_LEFT, -1, 0}, {"right", SDL_GAMEPAD_BUTTON_DPAD_RIGHT, -1, 0},
+        {"up", SDL_GAMEPAD_BUTTON_DPAD_UP, -1, 0}, {"down", SDL_GAMEPAD_BUTTON_DPAD_DOWN, -1, 0},
+        {"a", SDL_GAMEPAD_BUTTON_SOUTH, -1, 0}, {"b", SDL_GAMEPAD_BUTTON_EAST, -1, 0},
+        {"stickleft", -1, SDL_GAMEPAD_AXIS_LEFTX, -32768}, {"stickright", -1, SDL_GAMEPAD_AXIS_LEFTX, 32767},
+    };
+    if (npad_scripts >= 64 || pad < 1 || pad > 2) return;
+    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+        if (SDL_strcasecmp(control, names[i].name)) continue;
+        PadScript *p = &pad_script[npad_scripts++];
+        p->at = at; p->pad = pad - 1; p->button = names[i].button; p->axis = names[i].axis;
+        p->value = names[i].value; p->frames = frames > 0 ? frames : 6; p->state = 0;
+        return;
+    }
+    log_warn("--pad: unknown control %s", control);
+}
+
+static void attach_virtual_pads(void)
+{
+    int need = 0;
+    for (int i = 0; i < npad_scripts; i++) if (pad_script[i].pad + 1 > need) need = pad_script[i].pad + 1;
+    for (int i = 0; i < need; i++) {
+        SDL_VirtualJoystickDesc d;
+        SDL_INIT_INTERFACE(&d);
+        d.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+        d.naxes = SDL_GAMEPAD_AXIS_COUNT;
+        d.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+        d.name = "Test pad";
+        SDL_JoystickID id = SDL_AttachVirtualJoystick(&d);
+        vpads[i] = id ? SDL_OpenJoystick(id) : NULL;
+        if (!vpads[i]) log_warn("virtual gamepad: %s", SDL_GetError());
+        else pad_added(id);   /* claim the slots in order, before any event arrives */
+    }
+}
+
+static void run_pad_script(void)
+{
+    double now = (double)(SDL_GetTicksNS() - t0) / 1e9;
+    for (int i = 0; i < npad_scripts; i++) {
+        PadScript *p = &pad_script[i];
+        SDL_Joystick *j = vpads[p->pad];
+        if (!j || p->state == 2) continue;
+        bool start = p->state == 0 && now >= p->at, stop = p->state == 1 && now >= p->at + p->frames / 60.0;
+        if (!start && !stop) continue;
+        p->state = start ? 1 : 2;
+        if (p->button >= 0) SDL_SetJoystickVirtualButton(j, p->button, start);
+        else SDL_SetJoystickVirtualAxis(j, p->axis, (Sint16)(start ? p->value : 0));
+    }
+    if (npad_scripts) SDL_UpdateJoysticks();
+}
+
+/* Off the Mac, the Windows/Super and Alt keys are game keys (player 2's
+ * defaults). While the game hides the cursor, that is during play, the
+ * keyboard is grabbed so they don't open the Start menu, the Activities
+ * overview or window-manager shortcuts. Menus and dialogs release it. */
+static void update_grab(void)
+{
+#if !defined(SDL_PLATFORM_APPLE)
+    if (win && !headless) SDL_SetWindowKeyboardGrab(win, kb_grab && cursor_hidden);
+#endif
+}
+
+void plat_set_keyboard_grab(bool on) { kb_grab = on; update_grab(); }
+
 void plat_pump(void)
 {
     SDL_Event e;
+    static bool pads_ready;
+    if (!pads_ready) { pads_ready = true; attach_virtual_pads(); }
     run_script();
+    run_pad_script();
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
         case SDL_EVENT_QUIT:
@@ -259,6 +409,12 @@ void plat_pump(void)
             }
             break;
         }
+        case SDL_EVENT_GAMEPAD_ADDED:
+            pad_added(e.gdevice.which);
+            break;
+        case SDL_EVENT_GAMEPAD_REMOVED:
+            pad_removed(e.gdevice.which);
+            break;
         case SDL_EVENT_MOUSE_MOTION:
             if (headless) break;
             if (!nscript) map_mouse(e.motion.x, e.motion.y);
@@ -282,6 +438,8 @@ void plat_pump(void)
     }
     in.caps_lock = !headless && (SDL_GetModState() & SDL_KMOD_CAPS) != 0;
     set_key(0x39, in.caps_lock);
+    update_pads();
+    for (int i = 0; i < 16; i++) in.keymap[i] = kb_keys[i] | pad_keys[i];
     in.modifiers = mac_modifiers();
 }
 
@@ -392,6 +550,8 @@ uint32_t plat_secs_since_1904(void)
 
 void plat_show_cursor(bool show)
 {
+    cursor_hidden = !show;
+    update_grab();
     if (headless) return;
     if (show) SDL_ShowCursor(); else SDL_HideCursor();
 }

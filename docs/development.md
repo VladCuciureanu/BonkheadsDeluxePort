@@ -114,6 +114,7 @@ at.
 | `--headless` | Hidden window; real keyboard and mouse input is ignored. |
 | `--shot SECONDS FILE.bmp` | Save a screenshot of the final output, overlays included, and exit. Also logs any `--dump-a5` regions. |
 | `--press SECONDS:MACKEY[:FRAMES]` | Scripted key press. Takes a Mac virtual key code, e.g. `0x24` Return, `0x31` Space, `0x7B`/`0x7C`/`0x7E` arrows. |
+| `--pad SECONDS:PAD:CONTROL[:FRAMES]` | Scripted input on virtual gamepad 1 or 2: `left`, `right`, `up`, `down`, `a`, `b`, `stickleft`, `stickright`. |
 | `--click SECONDS:X:Y` / `--move SECONDS:X:Y` | Scripted mouse click or move, in game coordinates (640×480). |
 | `--snap SECONDS` | Save an extra screenshot (`FILE-SECONDS.bmp`) and keep running. Repeatable. |
 | `--dump-a5 OFFSET:LEN` | Log game globals at A5+OFFSET at `--shot` time. Repeatable; offsets are usually negative. |

@@ -23,6 +23,8 @@ static void usage(void)
            "  --fullscreen          start in fullscreen (Alt+Enter toggles)\n"
            "  --nosound             disable audio\n"
            "  --pixel-text          draw text in the original low-resolution fonts\n"
+           "  --no-keyboard-grab    let the Windows/Super and Alt keys reach the OS\n"
+           "                        during play (they are player 2's default keys)\n"
            "\n"
            "Network (see docs/network.md):\n"
            "  --port N              UDP port the host listens on (default 24731)\n"
@@ -42,6 +44,8 @@ static void usage(void)
            "  --press T:KEY[:FRAMES] at T seconds, hold Mac key code KEY (e.g. 0x24 Return)\n"
            "  --click T:X:Y         at T seconds, click at game coordinates X,Y\n"
            "  --move T:X:Y          at T seconds, move the mouse to X,Y\n"
+           "  --pad T:PAD:CTRL[:FRAMES] at T seconds, press CTRL on virtual gamepad 1 or 2\n"
+           "                        (left, right, up, down, a, b, stickleft, stickright)\n"
            "  --snap SECONDS        save an extra screenshot (FILE-SECONDS.bmp), keep running\n"
            "  --dump-a5 OFF:LEN     log LEN bytes of game globals at A5+OFF at --shot time\n"
            "  --poke-a5 T:OFF:HEX[:FUNC] at T seconds (once FUNC runs), write bytes at A5+OFF\n");
@@ -182,6 +186,11 @@ int main(int argc, char **argv)
             double at = 0; int mac = 0, frames = 6;
             if (sscanf(argv[++i], "%lf:%i:%d", &at, &mac, &frames) >= 2) plat_script_key(at, mac, frames);
         }
+        else if (!strcmp(a, "--pad") && i + 1 < argc) {
+            double at = 0; int pad = 1, frames = 6; char what[32] = "";
+            if (sscanf(argv[++i], "%lf:%d:%31[a-zA-Z]:%d", &at, &pad, what, &frames) >= 3) plat_script_pad(at, pad, what, frames);
+        }
+        else if (!strcmp(a, "--no-keyboard-grab")) plat_set_keyboard_grab(false);
         else if (!strcmp(a, "--move") && i + 1 < argc) {
             double at = 0; int x = 0, y = 0;
             if (sscanf(argv[++i], "%lf:%d:%d", &at, &x, &y) == 3) plat_script_move(at, x, y);
