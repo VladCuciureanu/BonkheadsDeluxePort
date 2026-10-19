@@ -16,21 +16,42 @@ option(BONKHEADS_STUB_GAME "Link against an empty stub instead of the recompiled
 option(BONKHEADS_WERROR "Treat warnings in the port sources as errors" OFF)
 
 if(NOT BONKHEADS_STUB_GAME)
-    # Unless a path was given, accept the archive under any name in the
-    # repository root.
+    # Unless a path was given, look for the archive: any .sit in the
+    # repository folder, then one with "bonkhead" in its name in Downloads or
+    # on the Desktop.
     if(BONKHEADS_SIT STREQUAL BONKHEADS_SIT_DEFAULT AND NOT EXISTS "${BONKHEADS_SIT}")
-        file(GLOB SIT_CANDIDATES "${CMAKE_SOURCE_DIR}/*.sit" "${CMAKE_SOURCE_DIR}/*.SIT")
+        set(SIT_FOUND "")
+        file(GLOB SIT_CANDIDATES "${CMAKE_SOURCE_DIR}/*.sit" "${CMAKE_SOURCE_DIR}/*.SIT" "${CMAKE_SOURCE_DIR}/*.Sit")
         list(REMOVE_DUPLICATES SIT_CANDIDATES)
         list(LENGTH SIT_CANDIDATES SIT_COUNT)
         if(SIT_COUNT EQUAL 1)
-            set(BONKHEADS_SIT "${SIT_CANDIDATES}" CACHE FILEPATH "" FORCE)
+            set(SIT_FOUND "${SIT_CANDIDATES}")
+        endif()
+        foreach(home "$ENV{USERPROFILE}" "$ENV{HOME}")
+            foreach(dir Downloads Desktop)
+                if(SIT_FOUND OR NOT home)
+                    continue()
+                endif()
+                file(GLOB SIT_CANDIDATES "${home}/${dir}/*.sit" "${home}/${dir}/*.SIT" "${home}/${dir}/*.Sit")
+                foreach(f IN LISTS SIT_CANDIDATES)
+                    get_filename_component(fname "${f}" NAME)
+                    string(TOLOWER "${fname}" fname)
+                    if(NOT SIT_FOUND AND fname MATCHES "bonkhead")
+                        set(SIT_FOUND "${f}")
+                    endif()
+                endforeach()
+            endforeach()
+        endforeach()
+        if(SIT_FOUND)
+            set(BONKHEADS_SIT "${SIT_FOUND}" CACHE FILEPATH "" FORCE)
         endif()
     endif()
     if(NOT EXISTS "${BONKHEADS_SIT}")
         message(FATAL_ERROR
-            "Game archive not found: ${BONKHEADS_SIT}\n"
-            "This repository contains no game data. Copy your own Bonkheads_Deluxe.SIT "
-            "into ${CMAKE_SOURCE_DIR}, or pass -DBONKHEADS_SIT=/path/to/Bonkheads_Deluxe.SIT. "
+            "Game archive not found.\n"
+            "This repository contains no game data. Put your own Bonkheads_Deluxe.SIT "
+            "in ${CMAKE_SOURCE_DIR} (or in your Downloads folder) and run the build "
+            "again, or pass -DBONKHEADS_SIT=/path/to/Bonkheads_Deluxe.SIT. "
             "To build only the engine without the game, pass -DBONKHEADS_STUB_GAME=ON.")
     endif()
     message(STATUS "Game archive: ${BONKHEADS_SIT}")

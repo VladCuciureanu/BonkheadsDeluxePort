@@ -1,9 +1,9 @@
 """Debug helper: print the settings stored in a 'Bonkheads Deluxe Prefs' file.
 
-usage: python -I tools/readprefs.py <path to "Bonkheads Deluxe Prefs.rsrc">
+usage: python -I tools/debug/readprefs.py <path to "Bonkheads Deluxe Prefs.rsrc">
 """
 import os, struct, sys
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import rsrc
 
 if len(sys.argv) != 2:

@@ -181,7 +181,7 @@ the port maps to the game data folder. It holds:
   calls AddResource with a handle that is already a resource. That must
   fail with `addResFailed`; it must not free the handle.
 
-Byte offsets in 'Bonk' 0 that matter (`tools/readprefs.py` prints them):
+Byte offsets in 'Bonk' 0 that matter (`tools/debug/readprefs.py` prints them):
 
 | Offset | Setting |
 |---|---|

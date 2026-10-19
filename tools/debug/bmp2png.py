@@ -1,6 +1,6 @@
 """Convert a 24/32-bit uncompressed BMP to PNG (debug helper, stdlib only).
 
-usage: python -I tools/bmp2png.py <in.bmp> <out.png>
+usage: python -I tools/debug/bmp2png.py <in.bmp> <out.png>
 """
 import struct, sys, zlib
 

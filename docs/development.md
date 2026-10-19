@@ -16,7 +16,7 @@ port's own code, tools and docs. Never commit any of these:
 - disassembly listings
 - screenshots or logs that show game assets
 
-`.gitignore` excludes `*.SIT`, `build/`, `extracted/`, `disasm/` and `out/`.
+`.gitignore` excludes `*.SIT`, `build/`, `build-*/`, `extracted/`, `disasm/` and `out/`.
 Keep generated output in those folders.
 
 ## Source layout
@@ -30,7 +30,7 @@ Keep generated output in those folders.
 | `tools/dumpcode.py` | Writes per-segment listings, split on MacsBug symbols. Useful for reading the game. |
 | `tools/recomp.py` | The 68k-to-C recompiler. |
 | `tools/traps.py` | Trap number to name table. |
-| `tools/readprefs.py`, `tools/bmp2png.py`, `tools/shot.ps1` | Debug helpers (see below). |
+| `tools/debug/` | Debug helpers (see below). |
 | `tools/stub/` | Empty game image for engine-only builds (`-DBONKHEADS_STUB_GAME=ON`). |
 | `tools/tests/` | Unit tests for the tools. They need no game data. |
 | `src/runtime/` | CPU state, condition-code helpers, memory access and the dispatch between recompiled functions. `layout.h` holds the memory map shared with `recomp.py`. |
@@ -123,16 +123,16 @@ loop for 3 seconds. It then logs the current recompiled function and trap,
 and on Windows a native stack trace of the main thread. The default
 `RelWithDebInfo` build keeps the symbols for this.
 
-**Settings.** `tools/readprefs.py "build/data/Bonkheads Deluxe/Bonkheads
+**Settings.** `tools/debug/readprefs.py "build/data/Bonkheads Deluxe/Bonkheads
 Deluxe Prefs.rsrc"` prints the stored keys, volume, music, difficulty and
 level set.
 
 ## Automated testing without disturbing a running game
 
-`tools/shot.ps1` runs the game headless and saves a screenshot (Windows):
+`tools/debug/shot.ps1` runs the game headless and saves a screenshot (Windows):
 
 ```bash
-powershell -File tools/shot.ps1 20 menu --press 3:0x31 --press 6:0x31
+powershell -File tools/debug/shot.ps1 20 menu --press 3:0x31 --press 6:0x31
 ```
 
 That example produces `build/logs/menu.png` and `build/logs/menu.log`. Each

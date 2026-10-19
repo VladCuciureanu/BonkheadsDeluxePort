@@ -1,10 +1,10 @@
 # Debug helper: run the port headless and save a screenshot after N seconds.
-# usage: tools\shot.ps1 <seconds> <outname> [extra args...]
+# usage: tools\debug\shot.ps1 <seconds> <outname> [extra args...]
 # Each run uses a private copy of the game data (build/testdata/<name>), so your
 # own prefs, saves and high scores are never touched. Set BONK_TEST_NETCFG to a
 # line such as "host_address=127.0.0.1:24732" to seed the copy's network.cfg.
 param([double]$Seconds, [string]$Name, [Parameter(ValueFromRemainingArguments = $true)][string[]]$Extra)
-$build = Join-Path $PSScriptRoot "..\build"
+$build = Join-Path $PSScriptRoot "..\..\build"
 $logs = Join-Path $build "logs"
 New-Item -ItemType Directory -Force $logs | Out-Null
 $scratch = $env:BONK_SHOT_DIR; if (-not $scratch) { $scratch = $logs }
