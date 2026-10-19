@@ -33,6 +33,8 @@ void evt_idle(void)
 {
     g_last_idle_us = plat_micros();
     plat_pump();
+    extern void debug_tick(double now);
+    debug_tick(plat_micros() / 1e6);
     if (g_shot_after >= 0 && plat_micros() / 1e6 >= g_shot_after) {
         plat_request_capture(g_shot_path);
         screen_present(true);

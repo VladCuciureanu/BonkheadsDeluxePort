@@ -164,22 +164,22 @@ static void map_mouse(float wx, float wy)
 
 /* scripted key presses for automated testing (--press) */
 typedef struct { double at; int16_t mac; int frames; int state; int x, y; } ScriptKey;  /* mac < 0: mouse click */
-static ScriptKey script[64];
+static ScriptKey script[256];
 static int nscript;
 
 void plat_script_click(double at, int x, int y)
 {
-    if (nscript < 64) { ScriptKey *k = &script[nscript++]; k->at = at; k->mac = -1; k->frames = 6; k->x = x; k->y = y; }
+    if (nscript < 256) { ScriptKey *k = &script[nscript++]; k->at = at; k->mac = -1; k->frames = 6; k->x = x; k->y = y; }
 }
 
 void plat_script_move(double at, int x, int y)
 {
-    if (nscript < 64) { ScriptKey *k = &script[nscript++]; k->at = at; k->mac = -2; k->x = x; k->y = y; }
+    if (nscript < 256) { ScriptKey *k = &script[nscript++]; k->at = at; k->mac = -2; k->x = x; k->y = y; }
 }
 
 void plat_script_key(double at, int mac, int frames)
 {
-    if (nscript < 64) { script[nscript].at = at; script[nscript].mac = (int16_t)mac; script[nscript].frames = frames > 0 ? frames : 6; nscript++; }
+    if (nscript < 256) { script[nscript].at = at; script[nscript].mac = (int16_t)mac; script[nscript].frames = frames > 0 ? frames : 6; nscript++; }
 }
 
 static uint8_t key_char(SDL_Keycode k, SDL_Keymod m, int16_t mac);

@@ -153,18 +153,32 @@ static void control_draw(uint32_t ch)
         int cy = (r.top + r.bottom) / 2;
         QRect b = { (int16_t)(cy - 6), r.left, (int16_t)(cy + 6), (int16_t)(r.left + 12) };
         box(port, r, white);
-        box(port, b, white);
-        frame(port, b, fg, 1);
-        if (rdw(c + C_value)) {
-            if (kind == 1) {
-                for (int i = 2; i < 10; i++) {
-                    QRect p1 = { (int16_t)(b.top + i), (int16_t)(b.left + i), (int16_t)(b.top + i + 1), (int16_t)(b.left + i + 1) };
-                    QRect p2 = { (int16_t)(b.top + i), (int16_t)(b.right - 1 - i), (int16_t)(b.top + i + 1), (int16_t)(b.right - i) };
-                    box(port, p1, fg); box(port, p2, fg);
-                }
-            } else {
-                QRect dot = { (int16_t)(b.top + 3), (int16_t)(b.left + 3), (int16_t)(b.bottom - 3), (int16_t)(b.right - 3) };
-                box(port, dot, fg);
+        if (kind == 2) {
+            /* radio buttons are round: the classic 12x12 circle, with a 6x6 dot when on */
+            static const char *const ring[12] = {
+                "....####....", "..##....##..", ".#........#.", ".#........#.", "#..........#", "#..........#",
+                "#..........#", "#..........#", ".#........#.", ".#........#.", "..##....##..", "....####....",
+            };
+            static const char *const dot[12] = {
+                "", "", "", "....####....", "...######...", "...######...",
+                "...######...", "...######...", "....####....", "", "", "",
+            };
+            bool on = rdw(c + C_value) != 0;
+            for (int y = 0; y < 12; y++)
+                for (int x = 0; x < 12; x++)
+                    if (ring[y][x] == '#' || (on && dot[y][0] && dot[y][x] == '#')) {
+                        QRect px = { (int16_t)(b.top + y), (int16_t)(b.left + x), (int16_t)(b.top + y + 1), (int16_t)(b.left + x + 1) };
+                        box(port, px, fg);
+                    }
+        } else {
+            box(port, b, white);
+            frame(port, b, fg, 1);
+        }
+        if (rdw(c + C_value) && kind == 1) {
+            for (int i = 2; i < 10; i++) {
+                QRect p1 = { (int16_t)(b.top + i), (int16_t)(b.left + i), (int16_t)(b.top + i + 1), (int16_t)(b.left + i + 1) };
+                QRect p2 = { (int16_t)(b.top + i), (int16_t)(b.right - 1 - i), (int16_t)(b.top + i + 1), (int16_t)(b.right - i) };
+                box(port, p1, fg); box(port, p2, fg);
             }
         }
         QRect tr = { (int16_t)(cy - 8), (int16_t)(r.left + 17), r.bottom, r.right };

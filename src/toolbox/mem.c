@@ -116,6 +116,11 @@ void mm_dispose_ptr(uint32_t p)
 {
     if (!p) return;
     if (!valid_block(p)) { log_warn("DisposePtr on bad pointer 0x%08X", p); return; }
+    /* DisposePtr only releases nonrelocatable blocks. The game passes the
+     * dereferenced 'NMBR' handles to it (DisposeScoreKeeper) and then disposes
+     * the handles too; freeing the block here would leave the master pointer
+     * dangling, so report memWZErr and let DisposeHandle release it. */
+    if (blk_kind(p - HDR) != KIND_PTR) { mm_set_err(memWZErr); return; }
     free_block(p);
     mm_set_err(0);
 }

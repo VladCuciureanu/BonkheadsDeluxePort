@@ -224,7 +224,10 @@ More about the internals:
 
 - the intro, the main menu and the high scores
 - every menu and dialog
-- one-player play
+- all twelve worlds and their bosses, and the finale levels
+- local two-player games and the Bonus Levels set
+- saving and loading games, one- and two-player
+- game over and entering your name for a high score
 - settings that are saved and applied
 - two-player network games, including over slow and lossy links
 
@@ -233,7 +236,7 @@ The engine also builds on macOS and Linux in CI.
 **Not yet tested:**
 
 - playing on macOS and Linux
-- a full playthrough, including later worlds, bosses and the ending
+- the ending, played all the way through without shortcuts
 - an internet game between two homes
 
 **Known limitations:**

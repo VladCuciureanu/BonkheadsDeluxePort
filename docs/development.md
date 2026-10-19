@@ -115,7 +115,9 @@ at.
 | `--shot SECONDS FILE.bmp` | Save a screenshot of the final output, overlays included, and exit. Also logs any `--dump-a5` regions. |
 | `--press SECONDS:MACKEY[:FRAMES]` | Scripted key press. Takes a Mac virtual key code, e.g. `0x24` Return, `0x31` Space, `0x7B`/`0x7C`/`0x7E` arrows. |
 | `--click SECONDS:X:Y` / `--move SECONDS:X:Y` | Scripted mouse click or move, in game coordinates (640×480). |
+| `--snap SECONDS` | Save an extra screenshot (`FILE-SECONDS.bmp`) and keep running. Repeatable. |
 | `--dump-a5 OFFSET:LEN` | Log game globals at A5+OFFSET at `--shot` time. Repeatable; offsets are usually negative. |
+| `--poke-a5 SECONDS:OFFSET:HEX[:FUNC]` | Write bytes to game globals at A5+OFFSET, optionally waiting until the original function `FUNC` is running. Pokes with the same time apply together. |
 | `--pixel-text` | Use the original bitmap text, to compare with the high-resolution text layer. |
 
 **Hangs.** A watchdog thread notices when the game stops reaching the event
@@ -146,6 +148,18 @@ Environment variables:
   `host_address=127.0.0.1:24732`.
 - `BONK_SOUND=1`: keeps audio on.
 - `BONK_SHOT_DIR`: puts the PNG somewhere else.
+- `BONK_KEEP_DATA=1`: reuses the data copy from the previous run of the same
+  name, for example to load a game saved in an earlier run.
+
+`--snap` screenshots are converted too, as `<name>-<SECONDS>.png`.
+
+Shortcuts for reaching late-game content:
+
+| How | Effect |
+|---|---|
+| `--poke-a5 T:-28487:01:STANDARDPLAY` | Ends the current level (the game's "level done" flag). |
+| `--poke-a5 T:-27796:<8 hex digits>:STANDARDPLAY` | Sets player 1's score. |
+| Shift + Control + Option while clicking 1 PLAYER | The game's own cheat for picking a starting world. |
 
 On macOS and Linux, run the same thing by hand:
 
