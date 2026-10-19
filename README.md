@@ -1,31 +1,44 @@
-# Bonkheads Deluxe for Windows, macOS and Linux
+# Bonkheads Deluxe Port
 
-A port of **Bonkheads Deluxe** (1 A.M. Productions, 1997), a two-player
-platform game for the classic Mac, to Windows, macOS and Linux. The original
-AppleTalk network mode works over the internet.
+An unofficial port of *Bonkheads Deluxe* (1 A.M. Productions, 1997) from the
+classic 68k Macintosh to Windows, macOS and Linux. The game's original
+AppleTalk multiplayer mode is carried over UDP and works over the internet.
 
-You need your own copy of the game, `Bonkheads_Deluxe.SIT`. This repository
-contains none of the game's code, graphics, sound or levels. When you build,
-your archive is unpacked and the game's 68k machine code is recompiled to C.
-Everything produced from the game stays in the local `build/` folder.
+This repository does not contain the game. A copy of the original
+`Bonkheads_Deluxe.SIT` archive is required. At build time the archive is
+extracted and the game's 68k code is statically recompiled to C. All output
+derived from the game stays in the local `build/` directory. The project
+cannot help with obtaining the game.
 
-## Quick start
+## Contents
 
-**1. Install the tools.** This is needed once per computer.
+- [Requirements](#requirements)
+- [Getting started](#getting-started)
+- [Controls](#controls)
+- [Command-line options](#command-line-options)
+- [Network play](#network-play)
+- [Data files](#data-files)
+- [Troubleshooting](#troubleshooting)
+- [Building manually](#building-manually)
+- [Architecture](#architecture)
+- [Project status](#project-status)
+- [Credits and license](#credits-and-license)
 
-<details>
-<summary><b>Windows</b></summary>
+## Requirements
 
-- [Visual Studio 2022 or newer](https://visualstudio.microsoft.com/downloads/).
-  The free Community edition is enough. In the installer, tick the
-  **Desktop development with C++** workload.
-- [Python 3](https://www.python.org/downloads/). In the installer, tick
-  **Add python.exe to PATH**.
+All platforms need CMake 3.20 or later, a C11 compiler, Python 3.8 or
+later, and internet access for the first build, which downloads SDL3 and
+stb_truetype.
 
-</details>
+### Windows
 
-<details>
-<summary><b>macOS</b></summary>
+- [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/) or
+  later (the Community edition is sufficient), with the *Desktop development
+  with C++* workload. It includes CMake and Ninja.
+- [Python 3](https://www.python.org/downloads/), installed with *Add
+  python.exe to PATH* selected.
+
+### macOS
 
 ```bash
 xcode-select --install
@@ -35,165 +48,162 @@ xcode-select --install
 brew install cmake ninja python
 ```
 
-The second command needs [Homebrew](https://brew.sh/).
+### Linux
 
-</details>
-
-<details>
-<summary><b>Linux (Debian/Ubuntu)</b></summary>
+The following installs the dependencies on Debian and Ubuntu:
 
 ```bash
 sudo apt-get install build-essential cmake ninja-build python3 pkg-config libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libdbus-1-dev libudev-dev libdrm-dev libgbm-dev fonts-noto-core
 ```
 
-For other distributions, SDL's
-[README-linux](https://github.com/libsdl-org/SDL/blob/main/docs/README-linux.md)
-lists the equivalent packages.
+For other distributions, see SDL's
+[README-linux](https://github.com/libsdl-org/SDL/blob/main/docs/README-linux.md).
 
-</details>
+## Getting started
 
-**2. Put `Bonkheads_Deluxe.SIT` in this folder.** Your Downloads folder or
-your Desktop also work.
+1. Place `Bonkheads_Deluxe.SIT` in the repository root. The build also
+   looks in the user's Downloads and Desktop folders.
+2. Run the launcher script. It builds the game if needed and then starts it.
+   - Windows: run `play.bat`, or double-click it.
+   - macOS and Linux:
 
-**3. Start the game.**
+     ```bash
+     ./play.sh
+     ```
 
-- **Windows:** double-click `play.bat`.
-- **macOS and Linux:** run this:
-
-  ```bash
-  ./play.sh
-  ```
-
-The first run downloads SDL3 and builds the game, which takes a few
-minutes. After that the game starts in seconds. Use the same command every
-time you want to play; it only rebuilds what has changed.
+The first build takes a few minutes. Later runs only rebuild what has
+changed.
 
 ## Controls
 
 | Player | Left | Jump | Right |
 |---|---|---|---|
-| Player 1 | ← | ↑ | → |
-| Player 2 | Ctrl | Windows / Super (Option on a Mac) | Alt (Command on a Mac) |
+| Player 1 | Left arrow | Up arrow | Right arrow |
+| Player 2 | Ctrl | Windows / Super (Option on macOS) | Alt (Command on macOS) |
 
-**Gamepads** work too: the first pad is player 1 and the second is player 2.
-Move with the d-pad or left stick and jump with A (the bottom button). You
-can mix the two, for example player 1 on the keyboard and player 2 on a pad.
-Menus still need the mouse and keyboard.
+The game refers to the Macintosh modifier keys. On Windows and Linux they
+are mapped by physical position:
 
-The game names the Mac's bottom-left keys. On a PC they sit in the same
-places:
-
-| The game says | Mac | Windows / Linux |
+| In the game | macOS | Windows / Linux |
 |---|---|---|
 | CNTL | Control | Ctrl |
 | OPTN | Option | Windows / Super |
 | CMND, ⌘ | Command | Alt |
 
-So "⌘ Q – Quits Game" means Alt+Q on a PC.
+Other controls:
 
-During play the game grabs the keyboard, so the Windows key doesn't open the
-Start menu. This also blocks Alt+Tab until you're back in a menu. Start with
-`--no-keyboard-grab` to turn this off.
-
-- **Change the keys** in **Preferences → Player Controls**.
-- **Pause** with Caps Lock, as on the original Mac.
-- **Fullscreen** toggles with Alt+Enter.
-- **Menu buttons** show what they do when you hover over them.
-- **Quit** with **QUIT** on the main menu, or ⌘Q (Alt+Q on a PC).
-
-Game options go after the command, for example `play.bat --fullscreen` or
-`./play.sh --scale 3`:
-
-| Option | Effect |
+| Action | Input |
 |---|---|
-| `--fullscreen` | Start in fullscreen. |
-| `--scale N` | Window size multiplier (default 2). You can also drag the window to any size. |
-| `--nosound` | Turn audio off. |
-| `--pixel-text` | Use the original low-resolution fonts. |
-| `--no-keyboard-grab` | Let the Windows and Alt keys reach the system during play. |
+| Pause | Caps Lock |
+| Toggle fullscreen | Alt+Enter |
+| Quit | QUIT on the main menu, or ⌘Q (Alt+Q on Windows and Linux) |
+| Rebind keys | Preferences → Player Controls |
 
-`--help` lists every option.
+Gamepads are supported. The first connected gamepad controls player 1 and
+the second controls player 2. The d-pad or left stick moves and the bottom
+face button (A) jumps. Gamepad input follows each player's key bindings.
+Menus require a mouse and keyboard.
 
-## Playing over the internet
+During gameplay the window grabs the keyboard so that the Windows/Super key
+does not open the system menu; this also disables Alt+Tab until a menu is
+shown. The `--no-keyboard-grab` option disables this behaviour.
 
-One player hosts and the other joins. Only the host needs to set up their
-router.
+## Command-line options
 
-**The host clicks NET HOST.**
+Options are passed to the game executable, or through the launcher scripts,
+for example `play.bat --fullscreen`.
 
-1. A banner shows your address. Send it to your friend:
-   - **On the same Wi-Fi or network:** send the local address shown, for
-     example `192.168.1.20`.
-   - **Over the internet:** send your public IP address (search for "what is
-     my IP"). Then, in your router, forward **UDP port 24731** to this
-     computer. If your firewall asks, allow the game.
-2. When your friend's name appears in the list, select it and click **OK**.
+| Option | Description |
+|---|---|
+| `--fullscreen` | Start in fullscreen mode. |
+| `--scale N` | Initial window scale factor (default 2). The window is resizable. |
+| `--nosound` | Disable audio. |
+| `--pixel-text` | Render text with the original bitmap fonts. |
+| `--no-keyboard-grab` | Do not grab the keyboard during gameplay. |
+| `--data DIR` | Load game data from `DIR`. |
+| `--port N` | UDP port used when hosting (default 24731). |
+| `--connect HOST[:PORT]` | Host address for NET JOIN; skips the address prompt. |
 
-**The joiner clicks NET JOIN.**
+`--help` lists all options, including the network tuning and debugging
+options described in [docs/network.md](docs/network.md) and
+[docs/development.md](docs/development.md).
 
-1. Type the address the host sent, for example `203.0.113.7`. It's
-   remembered for next time.
-2. If you're on the same network, you can leave the box empty, and the game
-   finds the host by itself.
+## Network play
 
-**If you can't forward a port**, install a free VPN such as
+Network games have two players: a host and a joiner. Only the host's port
+must be reachable.
+
+**Host**
+
+1. Select NET HOST. The game displays the computer's local address and the
+   port in use.
+2. Give the joiner the local address (same network) or the public IP
+   address (internet). For internet play, forward UDP port 24731 on the
+   router to the host computer and allow the game through the firewall.
+3. When the joiner's name appears in the list, select it and click OK.
+
+**Joiner**
+
+1. Select NET JOIN.
+2. Enter the host's address, for example `203.0.113.7`, or
+   `203.0.113.7:5000` for a non-default port. The address is saved for the
+   next session. On a local network, the field can be left empty to search
+   for a host automatically.
+
+If port forwarding is not possible, a virtual LAN such as
 [Tailscale](https://tailscale.com/) or [ZeroTier](https://www.zerotier.com/)
-on both computers. Then use the host's VPN address instead.
+can be used instead, with the host's virtual LAN address.
 
-**Other details:**
+Both players should run the same version of the port. To tolerate internet
+latency and packet loss, the transport layer paces packet delivery and
+sends each game packet twice. Tests with 120 ms round-trip time and 5%
+packet loss were playable. See [docs/network.md](docs/network.md) for the
+protocol details.
 
-- Both players should use the same version of this port.
-- To use another port, the host starts the game with `--port N`, and the
-  joiner types `ADDRESS:N`.
-- The port smooths over lag and lost packets. A game played well at about
-  120 ms round trip with 5% packet loss.
-- [docs/network.md](docs/network.md) explains how it works.
+## Data files
 
-## Settings, saves and high scores
-
-Everything the game writes goes into the game data folder,
-`build/data/Bonkheads Deluxe/`, as the original kept its files next to the
-application. Rebuilding never touches these files.
+The game stores its files in the data directory,
+`build/data/Bonkheads Deluxe/`, as the original stored them alongside the
+application. Rebuilding does not modify these files.
 
 | File | Contents |
 |---|---|
-| `Bonkheads Deluxe Prefs.rsrc` and `.finf` | Settings and high scores. Delete both to reset. |
-| Saved games | One file per save, with the name you gave it. |
-| `network.cfg` | The address last typed into NET JOIN. |
-| `highscores.cfg` | Optional. Your own entries for the default high-score table. |
+| `Bonkheads Deluxe Prefs.rsrc`, `Bonkheads Deluxe Prefs.finf` | Settings and high scores. Delete both files to reset them. |
+| Saved games | One file set per save, named in the save dialog. |
+| `network.cfg` | The last address entered in NET JOIN. |
+| `highscores.cfg` | Optional additional entries for the default high-score table. |
 
-Each Mac file is stored as up to three files. `NAME` holds the data,
-`NAME.rsrc` the resources and `NAME.finf` the Mac file type. Keep the three
-together when you copy a saved game.
+Each Macintosh file is stored as up to three host files: `NAME` (data
+fork), `NAME.rsrc` (resource fork) and `NAME.finf` (file type and creator).
+Copy all three when moving a saved game.
 
-To put your own names in the default high-score table, create
-`highscores.cfg` with one `name, score, level` entry per line:
+`highscores.cfg` contains one `name, score, level` entry per line. The
+entries are merged into the high-score table only when the table is newly
+created:
 
 ```
 Alice, 13337, 10
 Bob, 5000, 4
 ```
 
-The entries only go into a fresh table. Delete the prefs files to see them.
-
 ## Troubleshooting
 
-| Problem | What to do |
+| Problem | Resolution |
 |---|---|
-| `Game archive not found` | Put `Bonkheads_Deluxe.SIT` in this folder, then run again. |
-| `Python 3.8 or newer is required` | Install Python. On Windows, tick "Add python.exe to PATH". Then delete the `build` folder and run again. |
-| `no Visual Studio C++ compiler found` | Open the Visual Studio Installer, choose **Modify**, and tick **Desktop development with C++**. |
-| The first build fails while downloading | Check your internet connection. The first build downloads SDL3 and stb_truetype. |
-| The Linux build fails inside SDL | A development package is missing; install the list in Quick start. |
-| The host never sees the joiner | Check that the forwarded port is **UDP** (not TCP), that the host's firewall allows the game, and that the joiner typed the host's *public* address. Try on one network first. |
-| The game freezes | The console window shows a `watchdog:` message. Please include it when you report the problem. |
+| `Game archive not found` | Place `Bonkheads_Deluxe.SIT` in the repository root, or pass `-DBONKHEADS_SIT=PATH`. |
+| `Python 3.8 or newer is required` | Install Python (on Windows, with *Add python.exe to PATH*), delete `build/`, and build again. |
+| `no Visual Studio C++ compiler found` | In the Visual Studio Installer, select *Modify* and add the *Desktop development with C++* workload. |
+| The first build fails while downloading | Check the network connection or proxy. SDL3 and stb_truetype are downloaded on the first build only. |
+| The Linux build fails in SDL | A development package is missing. Install the packages listed under [Requirements](#linux). |
+| The host does not see the joiner | Verify that the forwarded port is UDP, that the host's firewall allows the game, and that the joiner used the host's public address. Test on a local network first. |
+| The game stops responding | The console log contains a `watchdog:` entry with diagnostic information. Include it in bug reports. |
 
-## Building by hand
+## Building manually
 
-`play.bat` and `play.sh` call `build.bat` and `build.sh`, which you can
-also run on their own. On Windows, `build.bat` finds Visual Studio itself.
-Both scripts run two CMake commands, which you can also type yourself, from
-an "x64 Native Tools Command Prompt" on Windows:
+The launcher scripts call `build.bat` (Windows) and `build.sh` (macOS,
+Linux), which can also be run directly. `build.bat` locates Visual Studio
+automatically. The equivalent CMake commands are shown below; on Windows,
+run them from an *x64 Native Tools Command Prompt*.
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -203,83 +213,85 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-The build needs CMake 3.20 or newer, a C11 compiler and Python 3.8 or newer.
-Options:
-
-| Setting | Effect |
+| Setting | Description |
 |---|---|
-| `-DBONKHEADS_SIT=PATH` | Use an archive somewhere else. Extra arguments to the build scripts go to CMake. |
-| `BUILD_DIR`, `BUILD_TYPE` | Environment variables for the scripts: output folder (default `build`) and configuration (default `RelWithDebInfo`). |
-| `-DBONKHEADS_STUB_GAME=ON` | Build the engine without the game, for CI. It needs neither the archive nor Python, and only runs `--help`. |
-| `-DBONKHEADS_WERROR=ON` | Treat warnings as errors. |
+| `-DBONKHEADS_SIT=PATH` | Path to the game archive. The build scripts pass extra arguments to CMake. |
+| `BUILD_DIR` | Environment variable for the build scripts: output directory (default `build`). |
+| `BUILD_TYPE` | Environment variable for the build scripts: build configuration (default `RelWithDebInfo`). |
+| `-DBONKHEADS_STUB_GAME=ON` | Build the engine against an empty stub instead of the game. Requires neither the archive nor Python; used by CI. |
+| `-DBONKHEADS_WERROR=ON` | Treat compiler warnings as errors. |
 
-## How it works
+## Architecture
 
 ```
 Bonkheads_Deluxe.SIT ──tools/sit5.py──▶ Mac files and resources (code, pictures, sounds, levels)
         CODE resources ──tools/recomp.py──▶ build/gen/*.c   (one C function per original function)
                                              │
             src/runtime  68k registers, big-endian memory, calls between functions
-            src/toolbox  the Mac Toolbox rewritten in C: QuickDraw, windows, dialogs,
-                         events, resources, files, sound, AppleTalk → UDP
+            src/toolbox  the Mac Toolbox in C: QuickDraw, windows, dialogs, events,
+                         resources, files, sound, AppleTalk over UDP
             src/platform SDL3 window, input, audio and UDP sockets
 ```
 
-The game's original machine code is translated once, ahead of time, into C
-that keeps the original function names, such as `f_Player1Processor` and
-`f_Boss1Brain`. About 300 Mac system calls the game uses are reimplemented
-on top of SDL3. The graphics are pixel-exact, and on-screen text is redrawn
-sharply in your system's font.
+The game's 68k code is translated ahead of time into C. Each original
+function becomes a C function with its original symbol name, for example
+`f_Player1Processor`. The approximately 300 Macintosh Toolbox and OS calls
+the game uses are reimplemented in C on top of SDL3. Graphics are rendered
+into an emulated 8-bit framebuffer and are pixel-exact. On-screen text is
+re-rendered at display resolution using the system UI font.
 
-More about the internals:
+Further documentation:
 
-- [docs/development.md](docs/development.md): the source layout, the
-  recompiler, and the debugging and testing tools
-- [docs/hle-spec.md](docs/hle-spec.md): what the game expects from the Mac
+- [docs/development.md](docs/development.md): source layout, recompiler,
+  debugging and testing
+- [docs/hle-spec.md](docs/hle-spec.md): the game's requirements of the
   Toolbox
-- [docs/network.md](docs/network.md): the network layer
+- [docs/network.md](docs/network.md): network transport and protocol
 
-## Status
+## Project status
 
-**Works (tested on Windows 11):**
+Tested on Windows 11:
 
-- the intro, the main menu and the high scores
-- every menu and dialog
-- all twelve worlds and their bosses, and the finale levels
+- intro, main menu and high-score tables
+- all menus and dialogs
+- all twelve worlds, their bosses and the finale levels
 - local two-player games and the Bonus Levels set
-- saving and loading games, one- and two-player
-- game over and entering your name for a high score
-- settings that are saved and applied
-- two-player network games, including over slow and lossy links
+- saving and loading one- and two-player games
+- game over and high-score entry
+- persistence and application of settings
+- two-player network games, including under simulated latency and packet
+  loss
 
-The engine also builds on macOS and Linux in CI.
+CI builds the engine on Windows, Ubuntu and macOS.
 
-**Not yet tested:**
+Not yet tested:
 
-- playing on macOS and Linux
-- the ending, played all the way through without shortcuts
-- an internet game between two homes
+- gameplay on macOS and Linux
+- the ending, reached without debugging shortcuts
+- network games between two separate networks over the internet
 
-**Known limitations:**
+Known limitations:
 
-- Networking:
-  - The host must forward a port, or both players must use a VPN.
-  - A dropped connection isn't detected; restart both games.
-- The level editor ("The Bonkreator") isn't ported.
-- A few shapes are approximated: round rectangles and ovals draw square.
+- There is no NAT traversal or relay server; the host must accept incoming
+  UDP traffic.
+- Disconnections are not detected during network games.
+- The level editor (*The Bonkreator*) is not ported.
+- Ovals and rounded rectangles are drawn as rectangles.
 
 ## Credits and license
 
-**Bonkheads Deluxe** was created by **1 A.M. Productions** (© 1997) and
-published by **Aspyr Media**. The game, its characters, art, sound, music
-and levels are theirs, and all credit for it belongs to them.
+*Bonkheads Deluxe* was developed by 1 A.M. Productions (© 1997) and
+published by Aspyr Media. The game, including its characters, artwork,
+sound, music and levels, is their work, and all credit for it belongs to
+them.
 
-This is an independent, unofficial port. It contains none of the original
-game's code or assets, so you need your own copy of the game. The port's own
-code is dedicated to the public domain under the [Unlicense](LICENSE). Its
-author claims no rights to it.
+This is an independent, unofficial project. It contains no code or assets
+from the original game. The source code of the port is dedicated to the
+public domain under the [Unlicense](LICENSE); its author claims no rights
+to it.
 
-The build downloads these libraries, which keep their own licenses:
+The build downloads the following libraries, which are distributed under
+their own licenses:
 
-- [SDL3](https://www.libsdl.org/) (zlib)
+- [SDL3](https://www.libsdl.org/) (zlib License)
 - [stb_truetype](https://github.com/nothings/stb) (public domain or MIT)
