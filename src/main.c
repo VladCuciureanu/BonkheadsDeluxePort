@@ -30,6 +30,20 @@ static void usage(void)
 
 /* hang diagnostics: report where the game is stuck if it stops reaching the
  * event loop for a few seconds */
+/* debug: --dump-a5 OFFSET:LEN (repeatable) logs A5-relative game globals at --shot time */
+static struct { int off, len; } dumps[16];
+static int ndumps;
+
+void debug_dump_globals(void)
+{
+    for (int i = 0; i < ndumps; i++) {
+        char hex[3 * 64 + 1] = "";
+        int n = dumps[i].len > 64 ? 64 : dumps[i].len;
+        for (int k = 0; k < n; k++) snprintf(hex + 3 * k, 4, "%02X ", rdb(A[5] + dumps[i].off + k));
+        log_info("A5%+d: %s", dumps[i].off, hex);
+    }
+}
+
 void stackdump_init(void);
 void stackdump_main_thread(void);
 
@@ -89,6 +103,9 @@ int main(int argc, char **argv)
             else fprintf(stderr, "cannot resolve %s\n", h);
         }
         else if (!strcmp(a, "--trace")) g_log_trace = 1;
+        else if (!strcmp(a, "--dump-a5") && i + 1 < argc && ndumps < 16) {
+            if (sscanf(argv[++i], "%i:%i", &dumps[ndumps].off, &dumps[ndumps].len) == 2) ndumps++;
+        }
         else if (!strcmp(a, "--pixel-text")) { extern bool g_text_hires; g_text_hires = false; }
         else if (!strcmp(a, "--netlog")) { extern int g_netlog; g_netlog = 1; }
         else if (!strcmp(a, "--shot") && i + 2 < argc) {

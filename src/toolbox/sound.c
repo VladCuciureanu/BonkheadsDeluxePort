@@ -188,8 +188,19 @@ void sound_update(void)
     if (in_update) return;
     in_update = true;
     if (!enabled) {
-        /* still run queues so callbacks/sync plays complete */
-        for (int i = 0; i < MAXCH; i++) if (chans[i].used) { chans[i].playing = false; chans[i].wait_frames = 0; pump_queue(&chans[i]); chans[i].playing = false; }
+        /* silent: still play channels in real time (into a discard buffer) so
+         * sounds take their real duration and callbacks fire at the right pace */
+        static uint64_t last_us;
+        uint64_t now = plat_micros();
+        if (!last_us) last_us = now;
+        uint64_t frames = (now - last_us) * OUT_RATE / 1000000;
+        if (frames > 8192) frames = 8192;
+        if (frames > 0) {
+            static int16_t discard[8192 * 2];
+            mix(discard, (int)frames);
+            last_us += frames * 1000000 / OUT_RATE;
+            if (now - last_us > 200000) last_us = now;
+        }
         in_update = false;
         return;
     }

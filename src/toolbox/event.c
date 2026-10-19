@@ -36,6 +36,8 @@ void evt_idle(void)
     if (g_shot_after >= 0 && plat_micros() / 1e6 >= g_shot_after) {
         plat_request_capture(g_shot_path);
         screen_present(true);
+        extern void debug_dump_globals(void);
+        debug_dump_globals();
         log_info("screenshot saved to %s", g_shot_path);
         extern void app_quit(void);
         app_quit();
