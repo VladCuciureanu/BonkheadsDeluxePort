@@ -419,6 +419,52 @@ static void std_put_file(uint32_t prompt, uint32_t defname, uint32_t reply)
     fill_reply(reply, ok, name, ok && fs_exists(fp));
 }
 
+/* generic one-line text prompt; returns false on Cancel/Esc */
+bool ui_prompt(const char *title, const char *help1, const char *help2, char *buf, size_t sz)
+{
+    ui_colors();
+    QRect r = { 140, 60, 310, 580 };
+    uint8_t *saved = ui_save(r);
+    bool ok = false, done = false;
+    while (!done) {
+        ui_fill(r, WHITE); ui_frame(r, BLACK);
+        QRect inner = { (int16_t)(r.top + 2), (int16_t)(r.left + 2), (int16_t)(r.bottom - 2), (int16_t)(r.right - 2) };
+        ui_frame(inner, BLACK);
+        ui_text(r.left + 20, r.top + 28, title, BLACK);
+        ui_text(r.left + 20, r.top + 52, help1, BLACK);
+        ui_text(r.left + 20, r.top + 70, help2, BLACK);
+        QRect in = { (int16_t)(r.top + 84), (int16_t)(r.left + 20), (int16_t)(r.top + 108), (int16_t)(r.right - 20) };
+        ui_fill(in, WHITE); ui_frame(in, BLACK);
+        char shown[300]; snprintf(shown, sizeof shown, "%s_", buf);
+        ui_text(in.left + 6, in.top + 17, shown, BLACK);
+        QRect go = { (int16_t)(r.bottom - 44), (int16_t)(r.right - 130), (int16_t)(r.bottom - 18), (int16_t)(r.right - 20) };
+        QRect cancel = { (int16_t)(r.bottom - 44), (int16_t)(r.right - 250), (int16_t)(r.bottom - 18), (int16_t)(r.right - 140) };
+        ui_frame(go, BLACK);
+        QRect ring = { (int16_t)(go.top - 3), (int16_t)(go.left - 3), (int16_t)(go.bottom + 3), (int16_t)(go.right + 3) };
+        ui_frame(ring, BLACK);
+        ui_frame(cancel, BLACK);
+        ui_text(go.left + 28, go.top + 18, "Connect", BLACK);
+        ui_text(cancel.left + 30, cancel.top + 18, "Cancel", BLACK);
+        screen_present(true);
+        int mx, my; bool dbl;
+        int k = ui_wait_input(&mx, &my, &dbl);
+        if (k == 0) {
+            if (mx >= go.left && mx < go.right && my >= go.top && my < go.bottom) { ok = true; done = true; }
+            if (mx >= cancel.left && mx < cancel.right && my >= cancel.top && my < cancel.bottom) done = true;
+        } else {
+            int ch = k & 0xFF;
+            size_t l = strlen(buf);
+            if (ch == 13 || ch == 3) { ok = true; done = true; }
+            else if (ch == 27) done = true;
+            else if (ch == 8) { if (l) buf[l - 1] = 0; }
+            else if (ch > 32 && ch < 127 && l + 1 < sz && l < 60) { buf[l] = (char)ch; buf[l + 1] = 0; }
+        }
+    }
+    ui_restore(r, saved);
+    screen_present(true);
+    return ok;
+}
+
 static void std_get_file(uint32_t types, int ntypes, uint32_t reply)
 {
     ui_colors();

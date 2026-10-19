@@ -20,6 +20,12 @@ static WinInfo *info(uint32_t w)
     return NULL;
 }
 
+bool win_exists_refcon(uint32_t refcon)
+{
+    for (int i = 0; i < nwins; i++) if (rdl(wins[i].w + W_refCon) == refcon) return true;
+    return false;
+}
+
 uint32_t win_front(void)
 {
     for (int i = 0; i < nwins; i++) if (rdb(wins[i].w + W_visible)) return wins[i].w;

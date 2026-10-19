@@ -30,6 +30,8 @@ uint64_t plat_micros(void);
 void plat_sleep_ms(int ms);
 uint32_t plat_secs_since_1904(void);
 void plat_set_title(const char *t);
+void plat_show_cursor(bool show);
 void plat_script_key(double at, int mac, int frames);
 void plat_script_click(double at, int x, int y);
+void plat_script_move(double at, int x, int y);
 bool plat_save_bmp(const char *path, const uint8_t *fb, int pitch, const uint8_t pal[256][3]);

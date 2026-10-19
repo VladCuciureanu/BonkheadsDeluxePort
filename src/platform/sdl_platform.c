@@ -79,7 +79,6 @@ bool plat_init(int scale, bool fullscreen)
     SDL_SetRenderLogicalPresentation(ren, SCREEN_W, SCREEN_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
     tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
     SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
-    SDL_HideCursor();
     t0 = SDL_GetTicksNS();
     return true;
 }
@@ -148,6 +147,11 @@ void plat_script_click(double at, int x, int y)
     if (nscript < 64) { ScriptKey *k = &script[nscript++]; k->at = at; k->mac = -1; k->frames = 6; k->x = x; k->y = y; }
 }
 
+void plat_script_move(double at, int x, int y)
+{
+    if (nscript < 64) { ScriptKey *k = &script[nscript++]; k->at = at; k->mac = -2; k->x = x; k->y = y; }
+}
+
 void plat_script_key(double at, int mac, int frames)
 {
     if (nscript < 64) { script[nscript].at = at; script[nscript].mac = (int16_t)mac; script[nscript].frames = frames > 0 ? frames : 6; nscript++; }
@@ -167,6 +171,10 @@ static void run_script(void)
     double now = (double)(SDL_GetTicksNS() - t0) / 1e9;
     for (int i = 0; i < nscript; i++) {
         ScriptKey *k = &script[i];
+        if (k->mac == -2) {   /* pointer move only */
+            if (k->state == 0 && now >= k->at) { k->state = 2; in.mouse_x = k->x; in.mouse_y = k->y; }
+            continue;
+        }
         if (k->mac < 0) {
             if (k->state == 0 && now >= k->at - 0.2) { k->state = 3; in.mouse_x = k->x; in.mouse_y = k->y; }
             if (k->state == 3 && now >= k->at) {
@@ -314,6 +322,11 @@ uint32_t plat_secs_since_1904(void)
     /* mktime interprets the UTC fields as local time: the difference is the zone offset */
     time_t offset = now - mktime(&gt);
     return (uint32_t)((uint64_t)(now + offset) + 2082844800ull);
+}
+
+void plat_show_cursor(bool show)
+{
+    if (show) SDL_ShowCursor(); else SDL_HideCursor();
 }
 
 void plat_set_title(const char *t) { if (win) SDL_SetWindowTitle(win, t); }

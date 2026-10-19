@@ -120,3 +120,27 @@ void udp_addr_str(UdpAddr a, char *out, size_t sz)
 {
     snprintf(out, sz, "%u.%u.%u.%u:%u", (a.ip >> 24) & 255, (a.ip >> 16) & 255, (a.ip >> 8) & 255, a.ip & 255, a.port);
 }
+
+bool udp_local_ip(char *out, size_t sz)
+{
+    /* "connect" a UDP socket to a documentation address: no packet is sent,
+     * but the OS picks the outgoing interface, whose address we read back */
+    sock_t s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == BAD_SOCK) return false;
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(0xC0000201u); /* 192.0.2.1 (TEST-NET-1) */
+    a.sin_port = htons(9);
+    bool ok = false;
+    if (connect(s, (struct sockaddr *)&a, sizeof a) == 0) {
+        struct sockaddr_in l; socklen_t ll = sizeof l;
+        if (getsockname(s, (struct sockaddr *)&l, &ll) == 0 && l.sin_addr.s_addr) {
+            uint32_t ip = ntohl(l.sin_addr.s_addr);
+            snprintf(out, sz, "%u.%u.%u.%u", (ip >> 24) & 255, (ip >> 16) & 255, (ip >> 8) & 255, ip & 255);
+            ok = true;
+        }
+    }
+    closesock(s);
+    return ok;
+}

@@ -14,3 +14,4 @@ bool udp_send(int s, UdpAddr to, const void *data, size_t len);
 int  udp_recv(int s, UdpAddr *from, void *buf, size_t cap);   /* -1 when nothing pending */
 bool udp_resolve(const char *host, uint16_t default_port, UdpAddr *out); /* "host[:port]" */
 void udp_addr_str(UdpAddr a, char *out, size_t sz);
+bool udp_local_ip(char *out, size_t sz);           /* primary LAN address */

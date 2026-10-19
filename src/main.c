@@ -72,6 +72,10 @@ int main(int argc, char **argv)
             double at = 0; int mac = 0, frames = 6;
             if (sscanf(argv[++i], "%lf:%i:%d", &at, &mac, &frames) >= 2) plat_script_key(at, mac, frames);
         }
+        else if (!strcmp(a, "--move") && i + 1 < argc) {
+            double at = 0; int x = 0, y = 0;
+            if (sscanf(argv[++i], "%lf:%d:%d", &at, &x, &y) == 3) plat_script_move(at, x, y);
+        }
         else if (!strcmp(a, "--click") && i + 1 < argc) {
             double at = 0; int x = 0, y = 0;
             if (sscanf(argv[++i], "%lf:%d:%d", &at, &x, &y) == 3) plat_script_click(at, x, y);

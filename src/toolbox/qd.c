@@ -820,8 +820,12 @@ static void T_BitTst(uint16_t op) { (void)op; int32_t n = (int32_t)ARG32(); uint
 static void T_BitSet(uint16_t op) { (void)op; int32_t n = (int32_t)ARG32(); uint32_t p = ARG32(); wrb(p + n / 8, rdb(p + n / 8) | (0x80 >> (n % 8))); }
 static void T_BitClr(uint16_t op) { (void)op; int32_t n = (int32_t)ARG32(); uint32_t p = ARG32(); wrb(p + n / 8, rdb(p + n / 8) & ~(0x80 >> (n % 8))); }
 
-/* cursor */
+/* cursor: Mac semantics, visible while the hide level is 0 */
+static int cursor_level;
 static void T_nop0(uint16_t op) { (void)op; }
+static void T_InitCursor(uint16_t op) { (void)op; cursor_level = 0; plat_show_cursor(true); }
+static void T_HideCursor(uint16_t op) { (void)op; if (--cursor_level == -1) plat_show_cursor(false); }
+static void T_ShowCursor(uint16_t op) { (void)op; if (cursor_level < 0 && ++cursor_level == 0) plat_show_cursor(true); }
 static void T_SetCursor(uint16_t op) { (void)op; (void)ARG32(); }
 static void T_GetCursor(uint16_t op) { (void)op; int16_t id = ARGS16(); RET32(res_get(OSTYPE('C','U','R','S'), id, false)); }
 
@@ -967,10 +971,10 @@ void qd_register_traps(void)
     trap_register(0xA85D, T_BitTst, "BitTst");
     trap_register(0xA85E, T_BitSet, "BitSet");
     trap_register(0xA85F, T_BitClr, "BitClr");
-    trap_register(0xA850, T_nop0, "InitCursor");
+    trap_register(0xA850, T_InitCursor, "InitCursor");
     trap_register(0xA851, T_SetCursor, "SetCursor");
-    trap_register(0xA852, T_nop0, "HideCursor");
-    trap_register(0xA853, T_nop0, "ShowCursor");
+    trap_register(0xA852, T_HideCursor, "HideCursor");
+    trap_register(0xA853, T_ShowCursor, "ShowCursor");
     trap_register(0xA856, T_nop0, "ObscureCursor");
     trap_register(0xA9B9, T_GetCursor, "GetCursor");
     trap_register(0xA882, T_StdText, "StdText");

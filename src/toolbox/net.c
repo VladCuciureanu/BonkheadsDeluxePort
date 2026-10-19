@@ -8,6 +8,7 @@
 #include "platform/udp.h"
 #include "platform/platform.h"
 #include "netcfg.h"
+#include "overlay.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -44,6 +45,13 @@ static bool advertising;
 static char adv_object[64], adv_type[64];
 
 static uint32_t lookup_pb;            /* outstanding PLookupName param block */
+static uint32_t lookup_started;
+static bool joined;                   /* joiner: a host has contacted us */
+static char host_addr[64];            /* address typed in the Net Host prompt */
+static UdpAddr host_target;
+static bool host_target_ok;
+
+bool ui_prompt(const char *title, const char *help1, const char *help2, char *buf, size_t sz);
 static uint32_t lookup_last_probe;
 
 static uint32_t fn_process_ddp;       /* ProcessDDPPacket */
@@ -235,6 +243,81 @@ static void probe_peers(void)
     UdpAddr bc = { 0xFFFFFFFFu, g_netcfg.port };
     send_raw(bc, K_PROBE, 0, q, n + 1);
     for (int i = 0; i < g_netcfg.nconnect; i++) send_raw(g_netcfg.connect[i], K_PROBE, 0, q, n + 1);
+    if (host_target_ok) send_raw(host_target, K_PROBE, 0, q, n + 1);
+}
+
+/* ---------------------------------------------------------------- settings & UI */
+static void cfg_path(char *out, size_t sz) { snprintf(out, sz, "%s/network.cfg", g_game_dir); }
+
+static void cfg_load(void)
+{
+    char p[1100]; cfg_path(p, sizeof p);
+    FILE *f = fopen(p, "r");
+    if (!f) return;
+    char line[256];
+    while (fgets(line, sizeof line, f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (!strncmp(line, "host_address=", 13)) snprintf(host_addr, sizeof host_addr, "%s", line + 13);
+    }
+    fclose(f);
+}
+
+static void cfg_save(void)
+{
+    char p[1100]; cfg_path(p, sizeof p);
+    FILE *f = fopen(p, "w");
+    if (!f) return;
+    fprintf(f, "host_address=%s\n", host_addr);
+    fclose(f);
+}
+
+static void host_prompt(void)
+{
+    static bool loaded;
+    if (!loaded) { cfg_load(); loaded = true; }
+    char buf[64]; snprintf(buf, sizeof buf, "%s", host_addr);
+    char help2[128];
+    snprintf(help2, sizeof help2, "Format: IP or name, optionally :port (default %u). Empty = local network only.", g_netcfg.port);
+    host_target_ok = false;
+    if (!ui_prompt("Connect to a friend who chose NET JOIN",
+                   "Type your friend's address, e.g. 203.0.113.7 or 192.168.1.20:24731", help2, buf, sizeof buf))
+        buf[0] = 0;  /* cancelled: search the local network only */
+    snprintf(host_addr, sizeof host_addr, "%s", buf);
+    cfg_save();
+    if (buf[0]) {
+        host_target_ok = udp_resolve(buf, g_netcfg.port, &host_target);
+        if (!host_target_ok) log_warn("net: cannot resolve %s", buf);
+    }
+}
+
+static void update_banner(void)
+{
+    char l1[160], l2[160];
+    uint16_t port = sock >= 0 ? udp_local_port(sock) : g_netcfg.port;
+    if (lookup_pb) {
+        int found = rdw(lookup_pb + 42);
+        if (host_addr[0] && !host_target_ok)
+            snprintf(l1, sizeof l1, "Couldn't find \"%s\". Searching your local network only.", host_addr);
+        else if (host_addr[0])
+            snprintf(l1, sizeof l1, "Looking for %s and players on your local network...", host_addr);
+        else
+            snprintf(l1, sizeof l1, "Looking for players on your local network...");
+        if (found)
+            snprintf(l2, sizeof l2, "Found %d. Click a name in the list, then click OK.", found);
+        else if (ticks_now() - lookup_started > 300)
+            snprintf(l2, sizeof l2, "Nobody yet. Your friend must be on NET JOIN; over the internet their UDP port must be forwarded.");
+        else
+            snprintf(l2, sizeof l2, "Your friend should be waiting on the NET JOIN screen.");
+        overlay_banner(l1, l2);
+    } else if (advertising && !joined) {
+        char ip[64] = "this computer's IP";
+        udp_local_ip(ip, sizeof ip);
+        snprintf(l1, sizeof l1, "Waiting for your friend to choose NET HOST and enter your address...");
+        snprintf(l2, sizeof l2, "Same network: %s:%u    Internet: your public IP, with UDP port %u forwarded", ip, port, port);
+        overlay_banner(l1, l2);
+    } else {
+        overlay_banner(NULL, NULL);
+    }
 }
 
 static void add_lookup_result(Peer *p)
@@ -272,6 +355,7 @@ int16_t net_driver_control(uint32_t pb, bool async)
         return 0;
     case 247: /* PCloseSkt */
         advertising = false; lookup_pb = 0;
+        update_banner();
         complete_pb(pb, 0);
         return 0;
     case 246: /* PWriteDDP */
@@ -281,6 +365,8 @@ int16_t net_driver_control(uint32_t pb, bool async)
         uint32_t nte = rdl(pb + 30);
         entity_strings(nte + 9, adv_object, adv_type);
         advertising = ensure_socket();
+        joined = false;
+        update_banner();
         log_info("net: waiting for a host as \"%s\" (UDP port %u)", adv_object, udp_local_port(sock));
         complete_pb(pb, 0);
         return 0;
@@ -289,10 +375,13 @@ int16_t net_driver_control(uint32_t pb, bool async)
         char obj[64];
         entity_strings(rdl(pb + 30), obj, adv_type);
         ensure_socket();
+        if (!lookup_pb) host_prompt();
         lookup_pb = pb;
+        lookup_started = ticks_now();
         wrw(pb + 42, 0);
         wrw(pb + 16, 1); /* in progress until killed */
         lookup_last_probe = 0;
+        update_banner();
         for (int i = 0; i < 16; i++) if (peers[i].used && peers[i].name[0]) add_lookup_result(&peers[i]);
         return 0;
     }
@@ -302,11 +391,12 @@ int16_t net_driver_control(uint32_t pb, bool async)
         return 0;
     case 252: /* PRemoveName */
         advertising = false;
+        update_banner();
         complete_pb(pb, 0);
         return 0;
     case 254: { /* PKillNBP: nKillQEl at +28 */
         uint32_t target = rdl(pb + 28);
-        if (target && target == lookup_pb) { wrw(lookup_pb + 16, 0); lookup_pb = 0; }
+        if (target && target == lookup_pb) { wrw(lookup_pb + 16, 0); lookup_pb = 0; update_banner(); }
         complete_pb(pb, 0);
         return 0;
     }
@@ -421,6 +511,7 @@ static void handle_datagram(UdpAddr from, const uint8_t *buf, int n)
     }
     if (kind != K_DDP) return;
     learn_peer(node, from, NULL);
+    if (advertising && !joined) { joined = true; update_banner(); }
     if (plen > 600) return;
     if (type == 0xAA && plen >= 4) {
         uint32_t seq = ((uint32_t)pl[0] << 24) | ((uint32_t)pl[1] << 16) | ((uint32_t)pl[2] << 8) | pl[3];
@@ -453,6 +544,7 @@ void net_poll(void)
     uint32_t now = ticks_now();
     if (lookup_pb && now - lookup_last_probe >= 30) {
         lookup_last_probe = now;
+        update_banner();
         probe_peers();
     }
     /* deliver queued packets: control packets immediately, game packets only

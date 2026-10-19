@@ -118,28 +118,30 @@ Controls are the original defaults:
 | Player 2 | Control | Option (Alt) | Command (Windows/Super key) |
 
 You can rebind keys in **Preferences → Keys**. Caps Lock pauses, as it did on
-the Mac. Saved games and preferences go in the game data folder.
+the Mac. The mouse pointer shows in menus and dialogs, and hides during play
+as the game requests. Saved games and preferences go in the game data folder.
 
 ### Internet multiplayer
 
-The original game's roles are kept, and so is its whole network protocol:
+The original game's roles are kept. Hover over a menu button to see what it
+does:
 
-- **Net Join** waits for a partner. This player needs a reachable UDP port:
-  24731 by default, changed with `--port`. Forward it on your router if
-  you're behind NAT.
-- **Net Host** looks for joiners and runs the game simulation. Point it at
-  the joiner's address:
+- **NET JOIN** waits for a friend to connect to you.
+  - While you wait, a banner shows the address to give your friend: your
+    LAN address, and the port to forward for internet play (UDP 24731 by
+    default, changed with `--port`).
+  - Over the internet, share your public IP and forward that UDP port on
+    your router.
+- **NET HOST** connects to a friend who chose NET JOIN. It asks for their
+  address, for example `203.0.113.7` or `192.168.1.20:24731`, and remembers
+  the last one you used. Leave the address empty to search your local
+  network only. The friend then appears in the "Where's your brother?"
+  list: pick them, click OK, and play continues as in 1997.
 
-```bash
-bonkheads --connect friend.example.com:24731
-```
+For scripts, `--connect HOST[:PORT]` adds an address without the prompt.
 
-Players on the same LAN find each other automatically via broadcast. The
-joiner then appears in the host's "Where's your brother?" list. Pick it and
-both players continue as in 1997.
-
-To cope with real internet links, the transport layer adds two things on top
-of the original protocol:
+The transport layer adds two things on top of the original protocol, to cope
+with real internet links:
 
 - **Pacing.** Each game packet is held until the game has consumed the
   previous one, so packet jitter doesn't overwrite unprocessed state. Tune

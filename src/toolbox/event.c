@@ -3,6 +3,7 @@
 #include "event.h"
 #include "netcfg.h"
 #include "sound.h"
+#include "overlay.h"
 #include <stdlib.h>
 
 /* ------------------------------------------------------------ presentation */
@@ -15,7 +16,7 @@ void screen_present(bool force)
     uint64_t now = plat_micros();
     if (!force && now - last_present_us < 16000) return;
     last_present_us = now;
-    plat_present(HP(g_screen_fb), SCREEN_W, (const uint8_t (*)[3])g_hw_pal);
+    plat_present(overlay_compose(HP(g_screen_fb)), SCREEN_W, (const uint8_t (*)[3])g_hw_pal);
     g_hw_pal_dirty = false;
 }
 
@@ -27,7 +28,7 @@ void evt_idle(void)
 {
     plat_pump();
     if (g_shot_after >= 0 && plat_micros() / 1e6 >= g_shot_after) {
-        plat_save_bmp(g_shot_path, HP(g_screen_fb), SCREEN_W, (const uint8_t (*)[3])g_hw_pal);
+        plat_save_bmp(g_shot_path, overlay_compose(HP(g_screen_fb)), SCREEN_W, (const uint8_t (*)[3])g_hw_pal);
         log_info("screenshot saved to %s", g_shot_path);
         extern void app_quit(void);
         app_quit();
