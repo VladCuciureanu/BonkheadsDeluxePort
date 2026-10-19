@@ -234,7 +234,7 @@ void res_close(int16_t ref)
     if (f->dirty && !f->readonly) write_fork(f);
     for (int i = 0; i < f->n; i++) {
         ResEnt *e = &f->ents[i];
-        if (e->handle && mm_is_handle(e->handle)) mm_dispose_handle(e->handle);
+        if (e->handle && !e->removed && mm_is_handle(e->handle)) mm_dispose_handle(e->handle);
         free(e->data);
     }
     free(f->ents);
@@ -275,6 +275,8 @@ static ResEnt *find_handle(uint32_t h, ResFile **owner)
     return NULL;
 }
 
+void port_patch_resource(uint32_t type, int16_t id, uint32_t h);
+
 static uint32_t load_ent(ResEnt *e)
 {
     if (e->handle && mm_is_handle(e->handle)) {
@@ -290,6 +292,7 @@ static uint32_t load_ent(ResEnt *e)
         e->handle = mm_handle_from_bytes(e->data, e->len);
     }
     if (e->handle) mm_hset_state(e->handle, HF_RESOURCE | ((e->attrs & 0x20) ? HF_PURGE : 0) | ((e->attrs & 0x10) ? HF_LOCKED : 0));
+    if (e->handle && rdl(e->handle)) port_patch_resource(e->type, e->id, e->handle);
     return e->handle;
 }
 
@@ -501,12 +504,15 @@ static void T_AddResource(uint16_t op)
     uint32_t nm = ARG32(); int16_t id = ARGS16(); uint32_t type = ARG32(); uint32_t h = ARG32();
     ResFile *f = rf(cur_file);
     if (!f || !h) { set_res_err(-194 /* addResFailed */); return; }
+    /* as on the Mac: a handle that already is a resource cannot be added again */
+    if (find_handle(h, NULL)) { set_res_err(-194 /* addResFailed */); return; }
     ResEnt *old = find_in(f, type, id);
-    if (old) old->removed = true;
+    if (old) { old->removed = true; old->handle = 0; }
     ResEnt *e = add_ent(f);
     e->type = type; e->id = id; e->attrs = 0x02; e->handle = h;
     if (nm && rdb(nm)) { pstr_to_c(nm, e->name, sizeof e->name); e->has_name = true; }
     e->len = 0; e->data = (uint8_t *)malloc(1);
+    port_patch_resource(type, id, h);
     mm_hset_state(h, mm_hget_state(h) | HF_RESOURCE);
     f->dirty = true;
     set_res_err(0);

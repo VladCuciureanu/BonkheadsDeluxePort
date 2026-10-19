@@ -220,17 +220,18 @@ static PortPats *port_pats(uint32_t port)
     return free_slot;
 }
 
-static const uint32_t classic_colors[][4] = {
-    { 33, 0x0000, 0x0000, 0x0000 }, { 30, 0xFFFF, 0xFFFF, 0xFFFF }, { 205, 0xDD6B, 0x08C2, 0x06A2 },
-    { 341, 0x0000, 0x8000, 0x11B0 }, { 409, 0x0000, 0x0000, 0xD400 }, { 273, 0x0241, 0xAB54, 0xEAFF },
-    { 137, 0xF2D7, 0x0856, 0x84EC }, { 69, 0xFC00, 0xF37D, 0x052F },
-};
-
+/* Classic QuickDraw colours are bit sets: blackBit 5, yellowBit 6, magentaBit 7,
+ * cyanBit 8 (subtractive). Color QuickDraw derives the RGB from those bits,
+ * which also covers non-standard values such as the 139 the game uses. */
 static void classic_rgb(uint32_t c, uint16_t *r, uint16_t *g, uint16_t *b)
 {
-    for (size_t i = 0; i < sizeof classic_colors / sizeof classic_colors[0]; i++)
-        if (classic_colors[i][0] == c) { *r = (uint16_t)classic_colors[i][1]; *g = (uint16_t)classic_colors[i][2]; *b = (uint16_t)classic_colors[i][3]; return; }
-    *r = *g = *b = 0;
+    if (c & (1u << 5)) { *r = *g = *b = 0; return; }
+    *r = (c & (1u << 8)) ? 0 : 0xFFFF;
+    *g = (c & (1u << 7)) ? 0 : 0xFFFF;
+    *b = (c & (1u << 6)) ? 0 : 0xFFFF;
+    /* inverseBit (1) inverts an ink colour: 139 = magenta|inverse -> green.
+     * whiteColor (30) also carries the bit but has no ink bits, so stays white. */
+    if ((c & (1u << 1)) && (c & 0x1C0)) { *r = (uint16_t)~*r; *g = (uint16_t)~*g; *b = (uint16_t)~*b; }
 }
 
 static uint8_t port_index_for(uint32_t port, uint32_t rgbaddr)
